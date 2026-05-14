@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+yfinance
+pandas
+numpy
+scipy
+python-dotenv
+rich
+apscheduler
+supabase
+requests
+beautifulsoup4
+hmmlearn
+transformers
+torch
