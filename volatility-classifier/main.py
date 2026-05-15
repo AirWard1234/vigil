@@ -7,6 +7,7 @@ from classifier.scorer import score
 from data.fetcher import fetch_market_snapshot
 from data.options import fetch_gex_snapshot, fetch_options_snapshot
 from data.sentiment import fetch_overnight_sentiment
+from ui.dashboard import render
 
 console = Console()
 
@@ -22,9 +23,13 @@ def run_pipeline() -> dict:
     verdict = score(market, options, sentiment, regime, range_forecast)
 
     return {
-        "verdict": verdict,
+        "market": market,
+        "options": options,
+        "gex": gex,
+        "sentiment": sentiment,
         "regime": regime,
         "range": range_forecast,
+        "verdict": verdict,
     }
 
 
@@ -36,7 +41,16 @@ def main():
             border_style="green",
         )
     )
-    run_pipeline()
+    result = run_pipeline()
+    render(
+        result["market"],
+        result["options"],
+        result["gex"],
+        result["sentiment"],
+        result["regime"],
+        result["range"],
+        result["verdict"],
+    )
 
 
 if __name__ == "__main__":
