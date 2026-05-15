@@ -30,6 +30,7 @@ for candidate in (Path(__file__).resolve().parent / ".env",
         load_dotenv(candidate)
         break
 
+from alerts.telegram import check_vix_intraday, send_morning_alert_job
 from api.routes import router, run_pipeline, run_pipeline_and_persist
 from classifier.regime import retrain as retrain_regime
 from ui.dashboard import render
@@ -54,9 +55,25 @@ def _start_scheduler() -> BackgroundScheduler:
         id="daily_pipeline",
         replace_existing=True,
     )
+    scheduler.add_job(
+        send_morning_alert_job,
+        CronTrigger(day_of_week="mon-fri", hour=8, minute=47),
+        id="morning_alert",
+        replace_existing=True,
+    )
+    # 15-min cadence Mon-Fri; the job itself filters to the 9:30–16:00 window.
+    scheduler.add_job(
+        check_vix_intraday,
+        CronTrigger(day_of_week="mon-fri", hour="9-16", minute="0,15,30,45"),
+        id="vix_intraday",
+        replace_existing=True,
+    )
 
     scheduler.start()
-    console.print("[green]APScheduler started[/green] [dim](Mon 8:00 ET retrain, Mon-Fri 8:45 ET run)[/dim]")
+    console.print(
+        "[green]APScheduler started[/green] [dim](Mon 8:00 retrain, "
+        "Mon-Fri 8:45 run, 8:47 alert, 9:30-16:00 VIX watch)[/dim]"
+    )
     return scheduler
 
 

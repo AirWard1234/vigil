@@ -289,6 +289,17 @@ def get_history(days: int = Query(default=30, ge=1, le=365)) -> dict:
         raise HTTPException(status_code=500, detail=f"history failed: {e}")
 
 
+@router.post("/telegram/webhook")
+def telegram_webhook(update: dict) -> dict:
+    """Receive Telegram bot updates and dispatch /verdict and /range commands."""
+    from alerts.telegram import handle_telegram_update
+    try:
+        handle_telegram_update(update)
+    except Exception as e:
+        console.print(f"[red]Telegram webhook handler failed:[/red] {e}")
+    return {"ok": True}
+
+
 @router.get("/health")
 def get_health() -> dict:
     """Liveness + state of today's pipeline run."""
