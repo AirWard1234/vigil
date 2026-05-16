@@ -316,11 +316,23 @@ def check_vix_intraday() -> None:
 
 
 # --------------------------------------------------------------------------
-# Webhook handler — /verdict and /range
+# Webhook handler — /start, /verdict, /range
 # --------------------------------------------------------------------------
 
+WELCOME_MESSAGE = (
+    "👋 Welcome to Vigil.\n\n"
+    "I'm your pre-market MNQ regime classifier.\n\n"
+    "Every morning at 8:45 AM ET I'll send you a verdict "
+    "before the market opens.\n\n"
+    "Commands:\n"
+    "/verdict — get today's verdict\n"
+    "/range — get today's expected MNQ range\n\n"
+    "Stay disciplined."
+)
+
+
 def handle_telegram_update(update: dict) -> None:
-    """Dispatch incoming Telegram updates to /verdict and /range handlers."""
+    """Dispatch incoming Telegram updates to /start, /verdict, /range handlers."""
     msg = (update or {}).get("message") or (update or {}).get("edited_message") or {}
     text = (msg.get("text") or "").strip()
     chat = msg.get("chat") or {}
@@ -328,12 +340,19 @@ def handle_telegram_update(update: dict) -> None:
     if not text or chat_id is None:
         return
 
-    # Ignore messages from any chat other than the configured one.
+    cmd = text.split()[0].split("@")[0].lower()
+
+    # /start is open to anyone — handled before the authz check so a new
+    # user can discover the bot and see what it does.
+    if cmd == "/start":
+        send_alert(WELCOME_MESSAGE, chat_id=chat_id)
+        return
+
+    # Everything below requires the configured chat ID.
     allowed = _default_chat_id()
     if allowed and str(chat_id) != str(allowed):
         return
 
-    cmd = text.split()[0].split("@")[0].lower()
     if cmd == "/verdict":
         row = _load_latest_row()
         reply = format_morning_alert(row) if row else "No verdict available yet."

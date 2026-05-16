@@ -302,7 +302,15 @@ def telegram_webhook(update: dict) -> dict:
 
 @router.get("/health")
 def get_health() -> dict:
-    """Liveness + state of today's pipeline run."""
+    """Liveness + per-API connectivity + state of today's pipeline run.
+
+    Returns 200 even when upstream APIs are down — the service itself is
+    still alive and the dependencies block tells you which ones aren't.
+    Railway's healthcheck just needs a 2xx; the body is for humans
+    debugging from logs.
+    """
+    from startup import check_api_connectivity
+
     uptime = time.time() - _SERVER_START_TS
     client = _supabase()
     last_run: str | None = None
@@ -324,9 +332,13 @@ def get_health() -> dict:
         except Exception as e:
             console.print(f"[red]Health Supabase check failed:[/red] {e}")
 
+    connectivity = check_api_connectivity()
+
     return {
         "status": "ok",
         "last_run": last_run,
         "today_complete": today_complete,
         "uptime": round(uptime, 2),
+        "dependencies": connectivity["checks"],
+        "all_dependencies_ok": connectivity["all_ok"],
     }

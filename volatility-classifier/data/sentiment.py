@@ -329,20 +329,29 @@ _finbert_load_failed = False
 
 
 def _get_finbert():
-    """Lazy-load FinBERT once per process. Returns None if load fails."""
+    """Lazy-load FinBERT once per process. Returns None if load fails.
+
+    Honors FINBERT_CACHE_DIR (set to the Railway volume in railway.toml) so the
+    ~440MB model downloads once and persists across redeploys.
+    """
     global _finbert_pipe, _finbert_load_failed
     if _finbert_pipe is not None or _finbert_load_failed:
         return _finbert_pipe
+    cache_dir = os.getenv("FINBERT_CACHE_DIR") or os.getenv("HF_HOME") or None
     try:
         from transformers import pipeline
-        _finbert_pipe = pipeline(
-            "sentiment-analysis",
+        pipe_kwargs = dict(
+            task="sentiment-analysis",
             model="ProsusAI/finbert",
             tokenizer="ProsusAI/finbert",
             truncation=True,
             top_k=None,
         )
-        console.print("[dim]FinBERT loaded (ProsusAI/finbert)[/dim]")
+        if cache_dir:
+            pipe_kwargs["model_kwargs"] = {"cache_dir": cache_dir}
+        _finbert_pipe = pipeline(**pipe_kwargs)
+        suffix = f" [dim](cache: {cache_dir})[/dim]" if cache_dir else ""
+        console.print(f"[dim]FinBERT loaded (ProsusAI/finbert){suffix}[/dim]")
     except Exception as e:
         console.print(f"[red]FinBERT load failed:[/red] {e}")
         _finbert_load_failed = True

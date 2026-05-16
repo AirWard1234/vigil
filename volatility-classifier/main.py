@@ -33,6 +33,11 @@ for candidate in (Path(__file__).resolve().parent / ".env",
 from alerts.telegram import check_vix_intraday, send_morning_alert_job
 from api.routes import router, run_pipeline, run_pipeline_and_persist
 from classifier.regime import retrain as retrain_regime
+from startup import (
+    check_api_connectivity,
+    log_api_connectivity,
+    validate_env_vars,
+)
 from ui.dashboard import render
 
 console = Console()
@@ -80,6 +85,8 @@ def _start_scheduler() -> BackgroundScheduler:
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     global _scheduler
+    validate_env_vars()
+    log_api_connectivity(check_api_connectivity())
     _scheduler = _start_scheduler()
     try:
         yield
