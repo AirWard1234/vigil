@@ -1,0 +1,23 @@
+# Root directory tells Railway which subfolder of the repo holds the
+# deployable app — build/start commands resolve relative to it.
+rootDirectory = "volatility-classifier"
+
+[build]
+builder = "NIXPACKS"
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+
+# FINBERT_CACHE_DIR points at the Railway volume so the ProsusAI/finbert
+# weights persist across redeploys instead of re-downloading on every boot.
+# Mount a volume in the Railway dashboard at /data and the model will land
+# at /data/finbert (set HF_HOME too so transformers honors the same path).
+[deploy.envs]
+FINBERT_CACHE_DIR = "/data/finbert"
+HF_HOME = "/data/finbert"
+TRANSFORMERS_CACHE = "/data/finbert"
+TZ = "America/New_York"

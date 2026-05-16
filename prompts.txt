@@ -1,0 +1,48 @@
+**Prompt 16 — Railway deployment**
+
+```
+Finalize Railway deployment:
+
+1. railway.toml:
+   Build: pip install -r requirements.txt
+   Start: uvicorn main:app --host 0.0.0.0 --port $PORT
+   Health check: GET /health
+
+2. On first boot, download FinBERT model and cache
+   to Railway volume. Never re-download on redeploy.
+
+3. .env.example:
+   SUPABASE_URL, SUPABASE_KEY,
+   FINNHUB_API_KEY, TRADIER_API_KEY,
+   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+   TZ=America/New_York
+
+4. Startup validation — check all env vars present
+   and all APIs reachable before first run. Log
+   clearly which key is missing and exit gracefully.
+
+5. Add a /health response that shows connectivity
+   status for every external API so you can debug
+   from Railway logs instantly.
+```
+
+---
+
+**Prompt 17 — README**
+
+```
+Write a README.md for volatility-classifier.
+
+Structure:
+- One paragraph: what it is and what problem it solves
+- Tech stack: Python, FastAPI, FinBERT, hmmlearn,
+  Tradier, Finnhub, Supabase, Railway, Vercel, Telegram
+- Five bullet points on what each layer contributes
+- Install and run instructions
+- API endpoint reference
+- Closing line:
+  "A forward-looking pre-market intelligence system
+   for MNQ futures — not a backtest, not a signal
+   generator. A regime classifier that tells you
+   when the edge exists before the open."
+```
