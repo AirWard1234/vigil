@@ -336,6 +336,114 @@ function PanelGrid({ data }: { data: DailyVerdict }) {
       <GexPanel data={data} />
       <OvernightPanel data={data} />
       <BiasPanel data={data} />
+      <OpenBiasPanel data={data} />
+    </div>
+  );
+}
+
+const GAP_COLORS: Record<string, string> = {
+  "Gap Up": "#00ff88",
+  "Gap Down": "#ff4444",
+  "Flat Open": "#ffffff",
+};
+
+const HOLD_COLORS: Record<string, string> = {
+  "Open likely holds": "#00ff88",
+  "Open direction uncertain": "#ffaa00",
+  "Open likely fades": "#ff4444",
+};
+
+function OpenBiasPanel({ data }: { data: DailyVerdict }) {
+  const gapLabel = data.gap_label ?? "—";
+  const gapPct = data.gap_pct;
+  const openHold = data.open_hold ?? "—";
+  const sweepRisk = data.sweep_risk;
+  const gapColor = GAP_COLORS[gapLabel] ?? colors.text;
+  const holdColor = HOLD_COLORS[openHold] ?? colors.text;
+
+  return (
+    <div
+      style={{
+        ...panelStyle,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+      <div style={panelLabelStyle}>Open Bias</div>
+
+      <div
+        style={{
+          ...numberStyle,
+          fontSize: 22,
+          textAlign: "center",
+          color: gapColor,
+          letterSpacing: 3,
+          textTransform: "uppercase",
+          fontWeight: 700,
+          marginTop: 4,
+        }}
+      >
+        {gapLabel}
+      </div>
+
+      <div
+        style={{
+          ...numberStyle,
+          fontSize: 16,
+          textAlign: "center",
+          color: gapColor,
+        }}
+      >
+        {gapPct != null
+          ? `${gapPct >= 0 ? "+" : ""}${gapPct.toFixed(2)}%`
+          : "—"}
+      </div>
+
+      <div
+        style={{
+          ...numberStyle,
+          fontSize: 12,
+          letterSpacing: 1.5,
+          textTransform: "uppercase",
+          color: holdColor,
+          textAlign: "center",
+          marginTop: 4,
+          fontWeight: 700,
+        }}
+      >
+        {openHold}
+      </div>
+
+      {sweepRisk && (
+        <div
+          style={{
+            fontFamily: mono,
+            fontSize: 11,
+            color: colors.red,
+            lineHeight: 1.4,
+            textAlign: "center",
+            border: `1px solid ${colors.red}66`,
+            padding: "6px 8px",
+            borderRadius: 2,
+          }}
+        >
+          {sweepRisk}
+        </div>
+      )}
+
+      <div
+        style={{
+          fontFamily: mono,
+          fontSize: 9,
+          color: colors.textDim,
+          fontStyle: "italic",
+          textAlign: "center",
+          marginTop: "auto",
+        }}
+      >
+        Pre-market estimate only — conditions change at open
+      </div>
     </div>
   );
 }

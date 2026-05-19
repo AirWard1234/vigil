@@ -417,6 +417,8 @@ def _verdict_panel(verdict: dict, regime: dict) -> Panel:
         "Directional lean only — not a trade signal", style=f"dim italic"
     )
 
+    open_bias_block = _open_bias_block(verdict)
+
     big = Text(f"  {v}  ", style=f"bold {color} reverse", justify="center")
     flag = ""
     if auto_red:
@@ -440,6 +442,8 @@ def _verdict_panel(verdict: dict, regime: dict) -> Panel:
         bias_line,
         bias_disclaimer,
         Text(""),
+        open_bias_block,
+        Text(""),
         big,
         count_line,
         Text(""),
@@ -447,6 +451,45 @@ def _verdict_panel(verdict: dict, regime: dict) -> Panel:
         reason,
     )
     return _panel(body, "Verdict", border=color)
+
+
+_GAP_COLOR = {"Gap Up": GREEN, "Gap Down": RED, "Flat Open": "white"}
+_HOLD_COLOR = {
+    "Open likely holds": GREEN,
+    "Open direction uncertain": YELLOW,
+    "Open likely fades": RED,
+}
+
+
+def _open_bias_block(verdict: dict) -> Group:
+    """Open-bias lines for the verdict panel — below the directional bias."""
+    gap_label = verdict.get("gap_label") or "Flat Open"
+    gap_pct = verdict.get("gap_pct")
+    open_hold = verdict.get("open_hold") or "Open direction uncertain"
+    gex_magnet = verdict.get("gex_magnet")
+    sweep_risk = verdict.get("sweep_risk")
+    disclaimer = verdict.get("open_bias_disclaimer") or (
+        "Pre-market estimate only — conditions change at open"
+    )
+
+    gap_color = _GAP_COLOR.get(gap_label, "white")
+    hold_color = _HOLD_COLOR.get(open_hold, "white")
+
+    header = Text()
+    header.append("Open Bias:   ", style="white")
+    header.append(gap_label.upper(), style=f"bold {gap_color}")
+    if gap_pct is not None:
+        header.append(f" ({gap_pct:+.2f}%)", style="white")
+    header.append("  ·  ", style=DIM)
+    header.append(open_hold, style=f"bold {hold_color}")
+
+    lines = [header]
+    if gex_magnet:
+        lines.append(Text(f"             {gex_magnet}", style=YELLOW))
+    if sweep_risk:
+        lines.append(Text(f"             {sweep_risk}", style=RED))
+    lines.append(Text(f"             {disclaimer}", style="dim italic"))
+    return Group(*lines)
 
 
 # --------------------------------------------------------------------------
@@ -477,7 +520,7 @@ def render(
         Layout(name="row1", ratio=2),
         Layout(name="row2", ratio=2),
         Layout(name="row3", ratio=2),
-        Layout(_verdict_panel(verdict, regime), name="footer", size=16),
+        Layout(_verdict_panel(verdict, regime), name="footer", size=22),
     )
     layout["row1"].split_row(
         Layout(_yield_panel(market), name="yield"),

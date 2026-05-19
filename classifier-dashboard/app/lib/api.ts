@@ -70,6 +70,11 @@ export type DailyVerdict = {
   bias_label: string | null;
   bias_conviction: string | null;
   bias_reason: string | null;
+
+  gap_label: string | null;
+  gap_pct: number | null;
+  open_hold: string | null;
+  sweep_risk: string | null;
 };
 
 export type HistoryResponse = {

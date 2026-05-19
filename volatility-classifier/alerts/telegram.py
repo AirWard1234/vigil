@@ -67,6 +67,8 @@ _BIAS_EMOJI = {
     "No Bias": "⚪",
 }
 
+_GAP_EMOJI = {"Gap Up": "⬆️", "Gap Down": "⬇️", "Flat Open": "▫️"}
+
 # Translate the internal GEX label into the morning-alert phrasing.
 _GEX_DESCRIPTOR = {
     "amplifying": ("Negative", "moves amplify"),
@@ -222,6 +224,24 @@ def _fmt_bias(label: str | None, conviction: str | None) -> str | None:
     return f"{emoji} Bias: {label}{suffix}"
 
 
+def _fmt_open_bias(row: dict) -> list[str]:
+    """Open-bias lines for the morning alert. Empty list if no data."""
+    gap_label = row.get("gap_label")
+    open_hold = row.get("open_hold")
+    if not gap_label and not open_hold:
+        return []
+
+    emoji = _GAP_EMOJI.get(gap_label or "", "▫️")
+    gap_pct = row.get("gap_pct")
+    pct_str = f" ({gap_pct:+.2f}%)" if gap_pct is not None else ""
+    lines = [f"{emoji} Open: {gap_label or '—'}{pct_str} — {open_hold or '—'}"]
+    if row.get("gex_magnet"):
+        lines.append(f"  {row['gex_magnet']}")
+    if row.get("sweep_risk"):
+        lines.append(f"  {row['sweep_risk']}")
+    return lines
+
+
 def format_morning_alert(row: dict) -> str:
     """Compose the morning Telegram message from a flattened verdict row."""
     verdict = (row.get("verdict") or "UNKNOWN").upper()
@@ -234,6 +254,8 @@ def format_morning_alert(row: dict) -> str:
     bias_line = _fmt_bias(row.get("bias_label"), row.get("bias_conviction"))
     if bias_line:
         lines.append(bias_line)
+    open_bias_lines = _fmt_open_bias(row)
+    lines.extend(open_bias_lines)
     lines.extend([
         _fmt_range(row.get("one_sigma_low"), row.get("one_sigma_high")),
         _fmt_gex(row.get("gex_label")),
@@ -244,6 +266,8 @@ def format_morning_alert(row: dict) -> str:
     ])
     if bias_line:
         lines.append("_Directional lean only — not a trade signal_")
+    if open_bias_lines:
+        lines.append("_Pre-market estimate only — conditions change at open_")
     if row.get("stale"):
         lines.append("(no run today yet — showing latest)")
     return "\n".join(lines)

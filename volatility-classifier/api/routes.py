@@ -186,6 +186,11 @@ def _flatten_for_db(result: dict, today: str) -> dict:
         "bias_label": verdict.get("bias_label"),
         "bias_conviction": verdict.get("bias_conviction"),
         "bias_reason": verdict.get("bias_reason"),
+
+        "gap_label": verdict.get("gap_label"),
+        "gap_pct": verdict.get("gap_pct"),
+        "open_hold": verdict.get("open_hold"),
+        "sweep_risk": verdict.get("sweep_risk"),
     }
     return _clean(row)
 

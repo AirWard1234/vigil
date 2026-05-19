@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import math
+
+import yfinance as yf
 from rich.console import Console
 
 console = Console()
@@ -182,6 +185,238 @@ def compute_bias(market: dict, options: dict, sentiment: dict, regime: dict) -> 
         "bias_conviction": conviction,
         "bias_reason": reason,
     }
+
+
+# --------------------------------------------------------------------------
+# Open bias — likely character of the first 30-60 minutes after 9:30 ET
+# --------------------------------------------------------------------------
+
+OPEN_BIAS_DISCLAIMER = "Pre-market estimate only — conditions change at open"
+
+GAP_THRESHOLD_PCT = 0.3
+SMH_UNDERPERFORM_PCT = -0.5
+GEX_MAGNET_PCT = 0.5
+TRADING_DAYS = 252
+
+
+def _fetch_mnq_premarket() -> dict:
+    """MNQ=F premarket price, prior close, and overnight high/low from yfinance.
+
+    Returns Nones on failure so callers can label fields as ESTIMATED.
+    """
+    result: dict = {
+        "price": None,
+        "prior_close": None,
+        "overnight_high": None,
+        "overnight_low": None,
+    }
+    try:
+        ticker = yf.Ticker("MNQ=F")
+        info = getattr(ticker, "fast_info", {}) or {}
+        price = (
+            info.get("last_price")
+            or info.get("lastPrice")
+            or info.get("regular_market_price")
+        )
+        prior_close = info.get("previous_close") or info.get("previousClose")
+
+        hist = ticker.history(period="2d", interval="15m", prepost=True)
+        if hist is not None and not hist.empty:
+            # Use the latest session worth of bars as "overnight" — for MNQ
+            # this captures the post-RTH-close → pre-open globex window.
+            session = hist.tail(96)  # 24h of 15-min bars
+            result["overnight_high"] = float(session["High"].max())
+            result["overnight_low"] = float(session["Low"].min())
+            if price is None:
+                price = float(session["Close"].iloc[-1])
+            if prior_close is None and len(hist) >= 2:
+                prior_close = float(hist["Close"].iloc[0])
+
+        result["price"] = float(price) if price else None
+        result["prior_close"] = float(prior_close) if prior_close else None
+    except Exception as e:
+        console.print(f"[red]MNQ premarket fetch failed:[/red] {e}")
+    return result
+
+
+def _gap_label(gap_pct: float) -> str:
+    if gap_pct > GAP_THRESHOLD_PCT:
+        return "Gap Up"
+    if gap_pct < -GAP_THRESHOLD_PCT:
+        return "Gap Down"
+    return "Flat Open"
+
+
+def _open_hold_score(
+    market: dict, gex: dict, sentiment: dict, regime: dict,
+) -> tuple[int, list[str]]:
+    """Score in [-3, +4] and the inputs that moved it (for explanation)."""
+    score = 0
+    notes: list[str] = []
+
+    smh_vs_spy = market.get("smh_vs_spy")
+    if smh_vs_spy is not None and smh_vs_spy > 0:
+        score += 1
+        notes.append(f"SMH +{smh_vs_spy:.2f}% vs SPY")
+    if smh_vs_spy is not None and smh_vs_spy < SMH_UNDERPERFORM_PCT:
+        score -= 1
+        notes.append(f"SMH {smh_vs_spy:.2f}% vs SPY")
+
+    semi_sent = sentiment.get("semi_sentiment_score")
+    if semi_sent is not None and semi_sent > 0.2:
+        score += 1
+        notes.append(f"semi sentiment {semi_sent:+.2f}")
+
+    gex_label = (gex or {}).get("gex_label") or ""
+    if gex_label == "suppressing":
+        score += 1
+        notes.append("GEX suppressing")
+    elif gex_label == "amplifying":
+        score -= 1
+        notes.append("GEX amplifying")
+
+    regime_label = (regime or {}).get("regime_label") or ""
+    if regime_label == "Trending Low Vol":
+        score += 1
+        notes.append("Trending Low Vol")
+    elif regime_label == "Mean Reverting":
+        score -= 1
+        notes.append("Mean Reverting")
+
+    return score, notes
+
+
+def _open_hold_label(score: int) -> str:
+    if score >= 2:
+        return "Open likely holds"
+    if score >= 0:
+        return "Open direction uncertain"
+    return "Open likely fades"
+
+
+def _one_sigma_move(market: dict, mnq_price: float | None) -> float | None:
+    """Approximate session 1σ MNQ move from VIX, for sweep-risk comparison."""
+    if not mnq_price or mnq_price <= 0:
+        return None
+    snaps = (market or {}).get("snapshots") or {}
+    vix = (snaps.get("^VIX") or {}).get("current_price")
+    if not vix or vix <= 0:
+        return None
+    return (vix / 100.0) / math.sqrt(TRADING_DAYS) * mnq_price
+
+
+def _gex_magnet(price: float | None, key_level: float | None) -> str | None:
+    if price is None or key_level is None or key_level <= 0:
+        return None
+    if abs(price - key_level) / key_level * 100.0 <= GEX_MAGNET_PCT:
+        return (
+            f"Price near GEX magnet at {key_level:,.1f} — "
+            f"expect gravitational pull"
+        )
+    return None
+
+
+def _sweep_risk(
+    regime: dict, gex: dict, premarket: dict, sigma_move: float | None,
+) -> str | None:
+    regime_label = (regime or {}).get("regime_label") or ""
+    gex_label = (gex or {}).get("gex_label") or ""
+    if regime_label == "Mean Reverting" and gex_label == "amplifying":
+        return "High sweep risk — expect liquidity grab before true direction"
+
+    high = premarket.get("overnight_high")
+    low = premarket.get("overnight_low")
+    if high is not None and low is not None and sigma_move and (high - low) > sigma_move:
+        return "Wide overnight range — opening gap fill likely"
+    return None
+
+
+def _open_summary(
+    gap_label: str, gap_pct: float, open_hold: str,
+    gex_magnet: str | None, sweep_risk: str | None,
+) -> str:
+    parts = [f"{gap_label} ({gap_pct:+.2f}%)", open_hold]
+    if gex_magnet:
+        parts.append(gex_magnet)
+    if sweep_risk:
+        parts.append(sweep_risk)
+    return ". ".join(parts) + "."
+
+
+def compute_open_bias(
+    market: dict, options: dict, gex: dict, sentiment: dict, regime: dict,
+) -> dict:
+    """Forward-looking estimate of the first 30-60 minutes after 9:30 ET.
+
+    Combines the MNQ premarket gap, an open-hold-vs-fade score across semi
+    relative strength, sentiment, GEX, and regime, plus magnet/sweep
+    callouts. Inputs are all from the 8:45 AM ET snapshot — see
+    OPEN_BIAS_DISCLAIMER for the caveat that ships alongside this output.
+    """
+    market = market or {}
+    options = options or {}
+    gex = gex or {}
+    sentiment = sentiment or {}
+    regime = regime or {}
+
+    premarket = _fetch_mnq_premarket()
+    price = premarket["price"]
+    prior_close = premarket["prior_close"]
+
+    if price is not None and prior_close:
+        gap_pct = (price - prior_close) / prior_close * 100.0
+    else:
+        gap_pct = 0.0
+    gap_label = _gap_label(gap_pct)
+
+    score, _notes = _open_hold_score(market, gex, sentiment, regime)
+    open_hold = _open_hold_label(score)
+
+    key_level = (gex or {}).get("key_gex_level_mnq")
+    gex_magnet = _gex_magnet(price, key_level)
+
+    sigma_move = _one_sigma_move(market, price)
+    sweep_risk = _sweep_risk(regime, gex, premarket, sigma_move)
+
+    open_summary = _open_summary(
+        gap_label, gap_pct, open_hold, gex_magnet, sweep_risk,
+    )
+
+    result = {
+        "gap_label": gap_label,
+        "gap_pct": round(gap_pct, 3),
+        "open_hold": open_hold,
+        "open_hold_score": score,
+        "gex_magnet": gex_magnet,
+        "sweep_risk": sweep_risk,
+        "open_summary": open_summary,
+        "premarket_price": round(price, 2) if price else None,
+        "prior_close": round(prior_close, 2) if prior_close else None,
+        "disclaimer": OPEN_BIAS_DISCLAIMER,
+    }
+    _print_open_bias(result)
+    return result
+
+
+def _print_open_bias(r: dict) -> None:
+    color = {"Gap Up": "green", "Gap Down": "red", "Flat Open": "white"}.get(
+        r["gap_label"], "white"
+    )
+    hold_color = {
+        "Open likely holds": "green",
+        "Open direction uncertain": "yellow",
+        "Open likely fades": "red",
+    }.get(r["open_hold"], "white")
+    console.print(
+        f"[bold {color}]Open bias:[/bold {color}] "
+        f"{r['gap_label']} ({r['gap_pct']:+.2f}%) — "
+        f"[bold {hold_color}]{r['open_hold']}[/bold {hold_color}]"
+    )
+    if r.get("gex_magnet"):
+        console.print(f"  [yellow]{r['gex_magnet']}[/yellow]")
+    if r.get("sweep_risk"):
+        console.print(f"  [red]{r['sweep_risk']}[/red]")
+    console.print(f"  [dim italic]{r['disclaimer']}[/dim italic]")
 
 
 def _technical_strikes(market: dict, options: dict, semi_health_score: int) -> list[str]:
@@ -449,6 +684,7 @@ def score(
     # compute_bias() can keep its 4-arg signature.
     bias_options = {**options, "gex_label": gex.get("gex_label") or options.get("gex_label")}
     bias = compute_bias(market, bias_options, sentiment, regime)
+    open_bias = compute_open_bias(market, options, gex, sentiment, regime)
 
     semi_health = compute_semi_health(market, options, sentiment)
     semi_health_score = semi_health["semi_health_score"]
@@ -501,6 +737,13 @@ def score(
         "bias_label": bias["bias_label"],
         "bias_conviction": bias["bias_conviction"],
         "bias_reason": bias["bias_reason"],
+        "gap_label": open_bias["gap_label"],
+        "gap_pct": open_bias["gap_pct"],
+        "open_hold": open_bias["open_hold"],
+        "gex_magnet": open_bias["gex_magnet"],
+        "sweep_risk": open_bias["sweep_risk"],
+        "open_summary": open_bias["open_summary"],
+        "open_bias_disclaimer": open_bias["disclaimer"],
     }
     _print_verdict(result)
     return result
@@ -586,4 +829,28 @@ def _print_verdict(r: dict) -> None:
         f"({r.get('bias_conviction', '?')}) "
         f"[dim]{r.get('bias_score', 0):+.1f}[/dim]"
     )
+    gap_label = r.get("gap_label")
+    if gap_label:
+        gap_pct = r.get("gap_pct") or 0.0
+        open_hold = r.get("open_hold") or "Open direction uncertain"
+        gap_color = {"Gap Up": "green", "Gap Down": "red", "Flat Open": "white"}.get(
+            gap_label, "white"
+        )
+        hold_color = {
+            "Open likely holds": "green",
+            "Open direction uncertain": "yellow",
+            "Open likely fades": "red",
+        }.get(open_hold, "white")
+        console.print(
+            f"  Open Bias: [bold {gap_color}]{gap_label}[/bold {gap_color}] "
+            f"({gap_pct:+.2f}%) — "
+            f"[bold {hold_color}]{open_hold}[/bold {hold_color}]"
+        )
+        if r.get("gex_magnet"):
+            console.print(f"    [yellow]{r['gex_magnet']}[/yellow]")
+        if r.get("sweep_risk"):
+            console.print(f"    [red]{r['sweep_risk']}[/red]")
+        console.print(
+            f"    [dim italic]{r.get('open_bias_disclaimer', '')}[/dim italic]"
+        )
     console.print(f"  [italic]{r['verdict_reason']}[/italic]")
