@@ -99,7 +99,7 @@ def run_pipeline() -> dict:
     sentiment = fetch_overnight_sentiment()
     regime = classify_regime(market, gex)
     range_forecast = expected_range(market, gex, sentiment, regime)
-    verdict = score(market, options, sentiment, regime, range_forecast)
+    verdict = score(market, options, sentiment, regime, range_forecast, gex)
 
     return {
         "market": market,
@@ -181,6 +181,11 @@ def _flatten_for_db(result: dict, today: str) -> dict:
         "one_sigma_high": range_data.get("one_sigma_high"),
 
         "verdict_reason": verdict.get("verdict_reason"),
+
+        "bias_score": verdict.get("bias_score"),
+        "bias_label": verdict.get("bias_label"),
+        "bias_conviction": verdict.get("bias_conviction"),
+        "bias_reason": verdict.get("bias_reason"),
     }
     return _clean(row)
 

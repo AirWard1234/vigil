@@ -58,6 +58,15 @@ _GENERIC_APPROACH = {
 
 _VERDICT_EMOJI = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴"}
 
+_BIAS_EMOJI = {
+    "Bullish": "📈",
+    "Lean Bullish": "🔼",
+    "Neutral": "➡️",
+    "Lean Bearish": "🔽",
+    "Bearish": "📉",
+    "No Bias": "⚪",
+}
+
 # Translate the internal GEX label into the morning-alert phrasing.
 _GEX_DESCRIPTOR = {
     "amplifying": ("Negative", "moves amplify"),
@@ -205,6 +214,14 @@ def _approach_line(verdict: str, regime: str | None) -> str:
     )
 
 
+def _fmt_bias(label: str | None, conviction: str | None) -> str | None:
+    if not label:
+        return None
+    emoji = _BIAS_EMOJI.get(label, "⚪")
+    suffix = f" ({conviction})" if conviction else ""
+    return f"{emoji} Bias: {label}{suffix}"
+
+
 def format_morning_alert(row: dict) -> str:
     """Compose the morning Telegram message from a flattened verdict row."""
     verdict = (row.get("verdict") or "UNKNOWN").upper()
@@ -213,15 +230,20 @@ def format_morning_alert(row: dict) -> str:
     confidence = row.get("regime_confidence")
     conf_str = f"{int(round(confidence))}%" if confidence is not None else "n/a"
 
-    lines = [
-        f"{emoji} {verdict} — {regime} ({conf_str})",
+    lines = [f"{emoji} {verdict} — {regime} ({conf_str})"]
+    bias_line = _fmt_bias(row.get("bias_label"), row.get("bias_conviction"))
+    if bias_line:
+        lines.append(bias_line)
+    lines.extend([
         _fmt_range(row.get("one_sigma_low"), row.get("one_sigma_high")),
         _fmt_gex(row.get("gex_label")),
         _fmt_semis(row.get("semi_health_label"), row.get("semi_health_score")),
         _fmt_yield(row.get("yield_bps_change"), row.get("yield_accelerating")),
         _fmt_event_risk(row.get("high_impact_event_today"), row.get("event_names")),
         f"Approach: {_approach_line(verdict, regime)}",
-    ]
+    ])
+    if bias_line:
+        lines.append("_Directional lean only — not a trade signal_")
     if row.get("stale"):
         lines.append("(no run today yet — showing latest)")
     return "\n".join(lines)

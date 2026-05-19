@@ -335,6 +335,169 @@ function PanelGrid({ data }: { data: DailyVerdict }) {
       <IvPanel data={data} />
       <GexPanel data={data} />
       <OvernightPanel data={data} />
+      <BiasPanel data={data} />
+    </div>
+  );
+}
+
+const BIAS_COLORS: Record<string, string> = {
+  Bullish: "#00ff88",
+  "Lean Bullish": "#88ffbb",
+  Neutral: "#ffffff",
+  "Lean Bearish": "#ffaa00",
+  Bearish: "#ff4444",
+  "No Bias": "#666666",
+};
+
+function BiasPanel({ data }: { data: DailyVerdict }) {
+  const label = data.bias_label ?? "Neutral";
+  const score = data.bias_score ?? 0;
+  const conviction = data.bias_conviction ?? "Low";
+  const reason = data.bias_reason ?? "";
+  const labelColor = BIAS_COLORS[label] ?? colors.text;
+
+  // Center marker at 0, fill segment from center to score position.
+  // -100 maps to 0%, 0 to 50%, +100 to 100%.
+  const clamped = Math.max(-100, Math.min(100, score));
+  const fillLeftPct = clamped < 0 ? 50 + clamped / 2 : 50;
+  const fillWidthPct = Math.abs(clamped) / 2;
+
+  const convictionLabel =
+    conviction === "High"
+      ? "HIGH CONVICTION"
+      : conviction === "Moderate"
+        ? "MODERATE"
+        : conviction === "Low"
+          ? "LOW"
+          : "NONE";
+
+  return (
+    <div
+      style={{
+        ...panelStyle,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+      <div style={panelLabelStyle}>Directional Bias</div>
+
+      <div
+        style={{
+          ...numberStyle,
+          fontSize: 22,
+          textAlign: "center",
+          color: labelColor,
+          letterSpacing: 3,
+          textTransform: "uppercase",
+          fontWeight: 700,
+          marginTop: 4,
+        }}
+      >
+        {label}
+      </div>
+
+      <div style={{ marginTop: 6 }}>
+        <div
+          style={{
+            position: "relative",
+            height: 10,
+            background: colors.cardAlt,
+            border: `1px solid ${colors.border}`,
+            borderRadius: 2,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: `${fillLeftPct}%`,
+              width: `${fillWidthPct}%`,
+              top: 0,
+              bottom: 0,
+              background: labelColor,
+              borderRadius: 2,
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: -2,
+              bottom: -2,
+              width: 1,
+              background: colors.textMuted,
+            }}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            ...numberStyle,
+            fontSize: 10,
+            color: colors.textDim,
+            marginTop: 4,
+          }}
+        >
+          <span>-100</span>
+          <span
+            style={{
+              ...numberStyle,
+              fontSize: 13,
+              color: labelColor,
+              fontWeight: 700,
+            }}
+          >
+            {score >= 0 ? `+${score.toFixed(1)}` : score.toFixed(1)}
+          </span>
+          <span>+100</span>
+        </div>
+      </div>
+
+      <div
+        style={{
+          ...numberStyle,
+          fontSize: 10,
+          letterSpacing: 1.5,
+          textTransform: "uppercase",
+          color: labelColor,
+          textAlign: "center",
+          marginTop: 2,
+        }}
+      >
+        {convictionLabel}
+      </div>
+
+      {reason && (
+        <div
+          style={{
+            fontFamily: mono,
+            fontSize: 11,
+            color: colors.textMuted,
+            lineHeight: 1.4,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {reason}
+        </div>
+      )}
+
+      <div
+        style={{
+          fontFamily: mono,
+          fontSize: 9,
+          color: colors.textDim,
+          fontStyle: "italic",
+          textAlign: "center",
+          marginTop: "auto",
+        }}
+      >
+        Directional lean only — not a trade signal
+      </div>
     </div>
   );
 }

@@ -31,6 +31,15 @@ BG = "white on black"
 _VERDICT_COLOR = {"GREEN": GREEN, "YELLOW": YELLOW, "RED": RED}
 _SEMI_NAMES = ["NVDA", "AMD", "TSM", "ASML", "INTC"]
 
+_BIAS_COLOR = {
+    "Bullish": "green",
+    "Lean Bullish": "bright_green",
+    "Neutral": "white",
+    "Lean Bearish": "yellow",
+    "Bearish": "red",
+    "No Bias": "grey50",
+}
+
 
 # --------------------------------------------------------------------------
 # formatting helpers
@@ -394,6 +403,20 @@ def _verdict_panel(verdict: dict, regime: dict) -> Panel:
     regime_line.append(f"{regime_label}", style=f"bold {regime_color}")
     regime_line.append(f"   {regime_conf:.0f}% confidence", style=DIM)
 
+    bias_label = verdict.get("bias_label") or "Neutral"
+    bias_conviction = verdict.get("bias_conviction") or "Low"
+    bias_reason = verdict.get("bias_reason") or ""
+    bias_color = _BIAS_COLOR.get(bias_label, "white")
+    bias_line = Text()
+    bias_line.append("Bias:        ", style="white")
+    bias_line.append(bias_label.upper(), style=f"bold {bias_color}")
+    bias_line.append(f" ({bias_conviction})", style=DIM)
+    if bias_reason:
+        bias_line.append(f" — {bias_reason}", style="white")
+    bias_disclaimer = Text(
+        "Directional lean only — not a trade signal", style=f"dim italic"
+    )
+
     big = Text(f"  {v}  ", style=f"bold {color} reverse", justify="center")
     flag = ""
     if auto_red:
@@ -414,6 +437,8 @@ def _verdict_panel(verdict: dict, regime: dict) -> Panel:
 
     body = Group(
         regime_line,
+        bias_line,
+        bias_disclaimer,
         Text(""),
         big,
         count_line,
@@ -452,7 +477,7 @@ def render(
         Layout(name="row1", ratio=2),
         Layout(name="row2", ratio=2),
         Layout(name="row3", ratio=2),
-        Layout(_verdict_panel(verdict, regime), name="footer", size=13),
+        Layout(_verdict_panel(verdict, regime), name="footer", size=16),
     )
     layout["row1"].split_row(
         Layout(_yield_panel(market), name="yield"),

@@ -65,6 +65,11 @@ export type DailyVerdict = {
   verdict_reason: string | null;
   created_at?: string;
   stale?: boolean;
+
+  bias_score: number | null;
+  bias_label: string | null;
+  bias_conviction: string | null;
+  bias_reason: string | null;
 };
 
 export type HistoryResponse = {

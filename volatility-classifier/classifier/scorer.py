@@ -39,6 +39,151 @@ EARNINGS_MIN, EARNINGS_MAX = 0.0, 30.0   # bonuses can push past 15, capped at 3
 EARNINGS_SURPRISE_THRESHOLD = 5.0        # |surprise_pct| beyond this is a beat/miss
 
 
+# --------------------------------------------------------------------------
+# Directional bias engine
+# --------------------------------------------------------------------------
+
+# Component weights — final score is the sum, clamped to [-100, +100].
+BIAS_SEMI_SENTIMENT_W = 25.0
+BIAS_MACRO_SENTIMENT_W = 20.0
+BIAS_SMH_VS_SPY_W = 15.0
+BIAS_SMH_VS_QQQ_W = 10.0
+BIAS_YIELD_W = 10.0
+
+# Inputs saturate at these magnitudes (linear ramp until then).
+BIAS_SMH_SPY_SAT = 1.0   # ±1.0% — caps SMH-vs-SPY contribution
+BIAS_SMH_QQQ_SAT = 1.0
+BIAS_YIELD_BPS_SAT = 5.0
+
+
+def _ramp(value: float, saturation: float) -> float:
+    """Map a signed input to [-1, +1] with a linear ramp out to `saturation`."""
+    if saturation <= 0:
+        return 0.0
+    return max(-1.0, min(1.0, value / saturation))
+
+
+def _bias_label(score: float) -> str:
+    if score > 40:
+        return "Bullish"
+    if score >= 15:
+        return "Lean Bullish"
+    if score >= -15:
+        return "Neutral"
+    if score > -40:
+        return "Lean Bearish"
+    return "Bearish"
+
+
+def _bias_conviction(score: float) -> str:
+    mag = abs(score)
+    if mag > 40:
+        return "High"
+    if mag >= 20:
+        return "Moderate"
+    return "Low"
+
+
+def _bias_reason(label: str, contributions: list[tuple[str, float, str]]) -> str:
+    """Plain-English sentence naming the two biggest absolute drivers."""
+    ranked = sorted(contributions, key=lambda c: abs(c[1]), reverse=True)
+    drivers = [c for c in ranked if abs(c[1]) > 0.5][:2]
+    if not drivers:
+        return f"{label} — no input pushed strongly in either direction."
+    details = " and ".join(c[2] for c in drivers)
+    return f"Driven by {details}."
+
+
+def compute_bias(market: dict, options: dict, sentiment: dict, regime: dict) -> dict:
+    """Forward-looking directional bias score in [-100, +100].
+
+    Aggregates overnight sentiment, semi relative strength, and the yield
+    move, then nudges by GEX and the HMM regime. Chaotic regime hard-
+    overrides to "No Bias" — there is no sustained direction to lean on.
+    """
+    market = market or {}
+    options = options or {}
+    sentiment = sentiment or {}
+    regime = regime or {}
+
+    regime_label = regime.get("regime_label")
+    if regime_label == "Chaotic":
+        return {
+            "bias_score": 0.0,
+            "bias_label": "No Bias",
+            "bias_conviction": "None",
+            "bias_reason": "Chaotic regime — no directional edge",
+        }
+
+    contributions: list[tuple[str, float, str]] = []
+    running = 0.0
+
+    semi_sent = sentiment.get("semi_sentiment_score")
+    if semi_sent is not None:
+        c = float(semi_sent) * BIAS_SEMI_SENTIMENT_W
+        running += c
+        descriptor = "strong semi sentiment" if semi_sent > 0 else "weak semi sentiment"
+        contributions.append(("semi_sentiment", c, f"{descriptor} ({semi_sent:+.2f})"))
+
+    macro_sent = sentiment.get("macro_sentiment_score")
+    if macro_sent is not None:
+        c = float(macro_sent) * BIAS_MACRO_SENTIMENT_W
+        running += c
+        descriptor = "positive macro tone" if macro_sent > 0 else "negative macro tone"
+        contributions.append(("macro_sentiment", c, f"{descriptor} ({macro_sent:+.2f})"))
+
+    smh_vs_spy = market.get("smh_vs_spy")
+    if smh_vs_spy is not None:
+        c = _ramp(float(smh_vs_spy), BIAS_SMH_SPY_SAT) * BIAS_SMH_VS_SPY_W
+        running += c
+        verb = "outperforming" if smh_vs_spy > 0 else "underperforming"
+        contributions.append(
+            ("smh_vs_spy", c, f"SMH {verb} SPY by {smh_vs_spy:+.1f}%")
+        )
+
+    smh_vs_qqq = market.get("smh_vs_qqq")
+    if smh_vs_qqq is not None:
+        c = _ramp(float(smh_vs_qqq), BIAS_SMH_QQQ_SAT) * BIAS_SMH_VS_QQQ_W
+        running += c
+        verb = "outperforming" if smh_vs_qqq > 0 else "underperforming"
+        contributions.append(
+            ("smh_vs_qqq", c, f"SMH {verb} QQQ by {smh_vs_qqq:+.1f}%")
+        )
+
+    yield_bps = market.get("yield_bps_change")
+    if yield_bps is not None:
+        # Higher yields are risk-off for tech/MNQ, so contribution is inverted.
+        c = -_ramp(float(yield_bps), BIAS_YIELD_BPS_SAT) * BIAS_YIELD_W
+        running += c
+        verb = "rising" if yield_bps > 0 else "falling"
+        contributions.append(
+            ("yield_bps_change", c, f"yields {verb} {yield_bps:+.1f}bps")
+        )
+
+    # GEX adjustment — amplifying gamma stretches directional moves.
+    gex_label = (options.get("gex_label") or "").lower()
+    if gex_label == "amplifying":
+        running *= 1.2
+
+    # Regime adjustment — dampen mean-reverting regimes, boost trending-low-vol.
+    if regime_label == "Trending Low Vol":
+        running *= 1.1
+    elif regime_label == "Mean Reverting":
+        running *= 0.5
+
+    score_final = max(-100.0, min(100.0, running))
+    label = _bias_label(score_final)
+    conviction = _bias_conviction(score_final)
+    reason = _bias_reason(label, contributions)
+
+    return {
+        "bias_score": round(score_final, 1),
+        "bias_label": label,
+        "bias_conviction": conviction,
+        "bias_reason": reason,
+    }
+
+
 def _technical_strikes(market: dict, options: dict, semi_health_score: int) -> list[str]:
     """Technical strikes — yield moves, VIX term structure, semi relative strength, IV."""
     market = market or {}
@@ -278,6 +423,7 @@ def score(
     sentiment: dict,
     regime: dict,
     range_data: dict,
+    gex: dict | None = None,
 ) -> dict:
     """Master scoring engine — combine every input into a final verdict.
 
@@ -297,6 +443,12 @@ def score(
     sentiment = sentiment or {}
     regime = regime or {}
     range_data = range_data or {}
+    gex = gex or {}
+
+    # gex_label lives in the gex snapshot — merge it into options so
+    # compute_bias() can keep its 4-arg signature.
+    bias_options = {**options, "gex_label": gex.get("gex_label") or options.get("gex_label")}
+    bias = compute_bias(market, bias_options, sentiment, regime)
 
     semi_health = compute_semi_health(market, options, sentiment)
     semi_health_score = semi_health["semi_health_score"]
@@ -345,6 +497,10 @@ def score(
         "one_sigma_high": range_data.get("one_sigma_high"),
         "key_gex_level_mnq": range_data.get("key_gex_level_mnq"),
         "verdict_reason": verdict_reason,
+        "bias_score": bias["bias_score"],
+        "bias_label": bias["bias_label"],
+        "bias_conviction": bias["bias_conviction"],
+        "bias_reason": bias["bias_reason"],
     }
     _print_verdict(result)
     return result
@@ -417,4 +573,17 @@ def _print_verdict(r: dict) -> None:
         console.print(f"  1σ range:        {slo:,.1f} — {shi:,.1f}")
     if r["key_gex_level_mnq"] is not None:
         console.print(f"  Key GEX (MNQ ≈): {r['key_gex_level_mnq']:,.1f}")
+    bias_color = {
+        "Bullish": "green",
+        "Lean Bullish": "bright_green",
+        "Neutral": "white",
+        "Lean Bearish": "yellow",
+        "Bearish": "red",
+        "No Bias": "grey50",
+    }.get(r.get("bias_label", "Neutral"), "white")
+    console.print(
+        f"  Bias: [bold {bias_color}]{r.get('bias_label', '?').upper()}[/bold {bias_color}] "
+        f"({r.get('bias_conviction', '?')}) "
+        f"[dim]{r.get('bias_score', 0):+.1f}[/dim]"
+    )
     console.print(f"  [italic]{r['verdict_reason']}[/italic]")
