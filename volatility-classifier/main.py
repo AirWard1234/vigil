@@ -31,7 +31,12 @@ for candidate in (Path(__file__).resolve().parent / ".env",
         break
 
 from alerts.telegram import check_vix_intraday, send_morning_alert_job
-from api.routes import router, run_pipeline, run_pipeline_and_persist
+from api.routes import (
+    reconcile_yesterday,
+    router,
+    run_pipeline,
+    run_pipeline_and_persist,
+)
 from classifier.regime import retrain as retrain_regime
 from startup import (
     check_api_connectivity,
@@ -73,11 +78,17 @@ def _start_scheduler() -> BackgroundScheduler:
         id="vix_intraday",
         replace_existing=True,
     )
+    scheduler.add_job(
+        reconcile_yesterday,
+        CronTrigger(day_of_week="mon-fri", hour=16, minute=15),
+        id="reconcile_yesterday",
+        replace_existing=True,
+    )
 
     scheduler.start()
     console.print(
         "[green]APScheduler started[/green] [dim](Mon 8:00 retrain, "
-        "Mon-Fri 8:45 run, 8:47 alert, 9:30-16:00 VIX watch)[/dim]"
+        "Mon-Fri 8:45 run, 8:47 alert, 9:30-16:00 VIX watch, 16:15 reconcile)[/dim]"
     )
     return scheduler
 

@@ -227,6 +227,53 @@ def format_morning_alert(row: dict) -> str:
     return "\n".join(lines)
 
 
+def format_accuracy_message(stats: dict) -> str:
+    """Compose the /accuracy reply from the /accuracy endpoint payload."""
+    reconciled = stats.get("reconciled_days") or 0
+    total = stats.get("total_days") or 0
+
+    if reconciled <= 0:
+        return (
+            "📊 Vigil Accuracy (last 30 days)\n"
+            f"Verdict: 0/{total} days reconciled so far\n"
+            "Range (1σ): n/a\n"
+            "Regime: n/a\n"
+            "Check back after market close."
+        )
+
+    def _line(label: str, value: float | None, suffix: str = "%") -> str:
+        return f"{label}: {value:.1f}{suffix}" if value is not None else f"{label}: n/a"
+
+    lines = [
+        "📊 Vigil Accuracy (last 30 days)",
+        f"Reconciled: {reconciled}/{total} days",
+        _line("Verdict", stats.get("verdict_accuracy")),
+        _line("Range (1σ)", stats.get("range_accuracy_1sigma")),
+        _line("Range (expected)", stats.get("range_accuracy_expected")),
+        _line("Regime", stats.get("regime_accuracy")),
+    ]
+
+    green_n = stats.get("green_days_total") or 0
+    yellow_n = stats.get("yellow_days_total") or 0
+    red_n = stats.get("red_days_total") or 0
+    if green_n or yellow_n or red_n:
+        lines.append("")
+        lines.append("By verdict:")
+        if green_n:
+            lines.append(
+                f"  🟢 GREEN  {stats.get('green_days_correct'):.0f}% ({green_n} days)"
+            )
+        if yellow_n:
+            lines.append(
+                f"  🟡 YELLOW {stats.get('yellow_days_correct'):.0f}% ({yellow_n} days)"
+            )
+        if red_n:
+            lines.append(
+                f"  🔴 RED    {stats.get('red_days_correct'):.0f}% ({red_n} days)"
+            )
+    return "\n".join(lines)
+
+
 def format_range_message(row: dict) -> str:
     """Just the expected range info — for /range command."""
     parts = []
@@ -326,7 +373,8 @@ WELCOME_MESSAGE = (
     "before the market opens.\n\n"
     "Commands:\n"
     "/verdict — get today's verdict\n"
-    "/range — get today's expected MNQ range\n\n"
+    "/range — get today's expected MNQ range\n"
+    "/accuracy — verdict & range accuracy over the last 30 days\n\n"
     "Stay disciplined."
 )
 
@@ -359,6 +407,15 @@ def handle_telegram_update(update: dict) -> None:
     elif cmd == "/range":
         row = _load_latest_row()
         reply = format_range_message(row) if row else "No range available yet."
+    elif cmd == "/accuracy":
+        # Call the route function directly — same process, avoids a self-HTTP hop.
+        from api.routes import get_accuracy
+        try:
+            stats = get_accuracy(30)
+            reply = format_accuracy_message(stats)
+        except Exception as e:
+            console.print(f"[red]/accuracy failed:[/red] {e}")
+            reply = "Accuracy stats unavailable right now."
     else:
         return
 

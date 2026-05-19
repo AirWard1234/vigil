@@ -1,4 +1,10 @@
-import { fetchLatest, type DailyVerdict, type Headline } from "./lib/api";
+import {
+  fetchAccuracy,
+  fetchLatest,
+  type AccuracyStats,
+  type DailyVerdict,
+  type Headline,
+} from "./lib/api";
 import {
   colors,
   fmtNum,
@@ -16,8 +22,23 @@ export const dynamic = "force-dynamic";
 export default async function TodayPage() {
   let data: DailyVerdict | null = null;
   let error: string | null = null;
+  let accuracy: AccuracyStats | null = null;
   try {
-    data = await fetchLatest();
+    const [latest, acc] = await Promise.allSettled([
+      fetchLatest(),
+      fetchAccuracy(30),
+    ]);
+    if (latest.status === "fulfilled") {
+      data = latest.value;
+    } else {
+      error =
+        latest.reason instanceof Error
+          ? latest.reason.message
+          : String(latest.reason);
+    }
+    if (acc.status === "fulfilled") {
+      accuracy = acc.value;
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -41,9 +62,99 @@ export default async function TodayPage() {
       <VerdictCard data={data} verdictColor={vColor} />
       <PanelGrid data={data} />
       <ExpectedRange data={data} />
+      {accuracy && <AccuracyPanel stats={accuracy} />}
       <Headlines data={data} />
       <EventRisk data={data} />
       <ReasonBlock data={data} />
+    </div>
+  );
+}
+
+function AccuracyPanel({ stats }: { stats: AccuracyStats }) {
+  const building = stats.reconciled_days < 5;
+  const fmt = (v: number | null) =>
+    v === null || v === undefined ? "—" : `${v.toFixed(1)}%`;
+
+  const cell = (label: string, value: string, color?: string) => (
+    <div
+      key={label}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+        padding: "10px 14px",
+        border: `1px solid ${colors.border}`,
+        borderRadius: 2,
+        background: colors.cardAlt,
+        minWidth: 120,
+      }}
+    >
+      <span style={{ ...panelLabelStyle, marginBottom: 0 }}>{label}</span>
+      <span
+        style={{
+          ...numberStyle,
+          fontSize: 20,
+          color: color ?? colors.text,
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+
+  return (
+    <div style={panelStyle}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          marginBottom: 10,
+        }}
+      >
+        <span style={panelLabelStyle}>Accuracy · last 30 days</span>
+        {building && (
+          <span
+            style={{
+              ...numberStyle,
+              fontSize: 11,
+              color: colors.yellow,
+              letterSpacing: 1.5,
+              textTransform: "uppercase",
+            }}
+          >
+            Building data…
+          </span>
+        )}
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: 10,
+        }}
+      >
+        {cell(
+          "Verdict",
+          building ? "—" : fmt(stats.verdict_accuracy),
+          building ? colors.textDim : colors.accent,
+        )}
+        {cell(
+          "Range (1σ)",
+          building ? "—" : fmt(stats.range_accuracy_1sigma),
+          building ? colors.textDim : colors.text,
+        )}
+        {cell(
+          "Regime",
+          building ? "—" : fmt(stats.regime_accuracy),
+          building ? colors.textDim : colors.text,
+        )}
+        {cell(
+          "Days tracked",
+          `${stats.reconciled_days}/${stats.total_days}`,
+          colors.textMuted,
+        )}
+      </div>
     </div>
   );
 }

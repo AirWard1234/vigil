@@ -73,6 +73,21 @@ export type HistoryResponse = {
   verdicts: DailyVerdict[];
 };
 
+export type AccuracyStats = {
+  total_days: number;
+  reconciled_days: number;
+  range_accuracy_expected: number | null;
+  range_accuracy_1sigma: number | null;
+  regime_accuracy: number | null;
+  verdict_accuracy: number | null;
+  green_days_correct: number | null;
+  yellow_days_correct: number | null;
+  red_days_correct: number | null;
+  green_days_total?: number;
+  yellow_days_total?: number;
+  red_days_total?: number;
+};
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 function requireApiUrl(): string {
@@ -95,5 +110,13 @@ export async function fetchHistory(days = 30): Promise<HistoryResponse> {
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`history fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAccuracy(days = 30): Promise<AccuracyStats> {
+  const res = await fetch(`${requireApiUrl()}/accuracy?days=${days}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`accuracy fetch failed: ${res.status}`);
   return res.json();
 }
