@@ -2,11 +2,17 @@ export type Verdict = "GREEN" | "YELLOW" | "RED";
 
 export type Headline = {
   title?: string;
+  headline?: string;
   source?: string;
   url?: string;
-  sentiment?: number;
-  score?: number;
+  ticker?: string;
+  sentiment?: string | number | null;
+  sentiment_score?: number | string | null;
+  confidence?: number | string | null;
+  score?: number | string | null;
+  weight?: number | null;
   published?: string;
+  datetime?: string;
 };
 
 export type TopHeadlines = {

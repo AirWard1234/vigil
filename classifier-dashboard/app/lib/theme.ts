@@ -62,13 +62,14 @@ export function fmtNum(
 }
 
 export function fmtSigned(
-  v: number | null | undefined,
+  v: number | string | null | undefined,
   digits = 2,
   suffix = "",
 ): string {
-  if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  const sign = v > 0 ? "+" : "";
-  return `${sign}${v.toFixed(digits)}${suffix}`;
+  if (v === null || v === undefined || isNaN(Number(v))) return "—";
+  const n = Number(v);
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n.toFixed(digits)}${suffix}`;
 }
 
 export function fmtPct(v: number | null | undefined, digits = 0): string {

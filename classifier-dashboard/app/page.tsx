@@ -575,15 +575,34 @@ function ExpectedRange({ data }: { data: DailyVerdict }) {
 }
 
 function HeadlineRow({ h }: { h: Headline }) {
-  const score = h.sentiment ?? h.score ?? null;
+  // h.sentiment is the FinBERT label string ("positive"/"negative"/"neutral").
+  // h.sentiment_score is the signed number we actually want to display.
+  // Coerce defensively — the API can return null, a string, or omit the field.
+  const rawScore = h.sentiment_score ?? h.score ?? null;
+  const score =
+    rawScore !== null && rawScore !== undefined && !isNaN(Number(rawScore))
+      ? Number(rawScore)
+      : null;
+
+  const rawConfidence = h.confidence;
+  const confidence =
+    rawConfidence !== null &&
+    rawConfidence !== undefined &&
+    !isNaN(Number(rawConfidence))
+      ? Number(rawConfidence)
+      : null;
+
   const sentColor =
-    score == null
+    score === null
       ? colors.textMuted
       : score > 0.1
         ? colors.green
         : score < -0.1
           ? colors.red
           : colors.yellow;
+
+  const title = h.title ?? h.headline ?? "(untitled)";
+
   return (
     <div
       style={{
@@ -602,7 +621,7 @@ function HeadlineRow({ h }: { h: Headline }) {
           minWidth: 56,
         }}
       >
-        {score != null ? fmtSigned(score, 2) : "—"}
+        {score !== null ? fmtSigned(score, 2) : "—"}
       </span>
       <span style={{ flex: 1, fontFamily: mono, fontSize: 13 }}>
         {h.url ? (
@@ -612,12 +631,23 @@ function HeadlineRow({ h }: { h: Headline }) {
             rel="noreferrer"
             style={{ color: colors.text, textDecoration: "none" }}
           >
-            {h.title ?? "(untitled)"}
+            {title}
           </a>
         ) : (
-          h.title ?? "(untitled)"
+          title
         )}
       </span>
+      {confidence !== null && (
+        <span
+          style={{
+            color: colors.textDim,
+            fontSize: 11,
+            fontFamily: mono,
+          }}
+        >
+          {(confidence * 100).toFixed(0)}%
+        </span>
+      )}
       {h.source && (
         <span
           style={{
@@ -635,9 +665,31 @@ function HeadlineRow({ h }: { h: Headline }) {
 }
 
 function Headlines({ data }: { data: DailyVerdict }) {
-  const semi = (data.top_headlines?.semi ?? []).slice(0, 3);
-  const macro = (data.top_headlines?.macro ?? []).slice(0, 3);
-  if (semi.length === 0 && macro.length === 0) return null;
+  const semi = Array.isArray(data.top_headlines?.semi)
+    ? data.top_headlines!.semi!.slice(0, 3)
+    : [];
+  const macro = Array.isArray(data.top_headlines?.macro)
+    ? data.top_headlines!.macro!.slice(0, 3)
+    : [];
+
+  if (semi.length === 0 && macro.length === 0) {
+    return (
+      <div style={panelStyle}>
+        <div style={panelLabelStyle}>Top Headlines</div>
+        <div
+          style={{
+            color: colors.textMuted,
+            fontFamily: mono,
+            fontSize: 13,
+            padding: "8px 0",
+          }}
+        >
+          No headlines available
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
