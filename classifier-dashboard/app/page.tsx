@@ -321,11 +321,13 @@ function VerdictCard({
 }
 
 function PanelGrid({ data }: { data: DailyVerdict }) {
+  // Fixed 4 columns so the 8 panels fill two even rows — `auto-fit` packed
+  // 5 per row and left a ragged gap of empty cells on wide screens.
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+        gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
         gap: 12,
       }}
     >
