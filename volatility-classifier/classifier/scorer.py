@@ -573,9 +573,21 @@ def _auto_red_overrides(
             return f"{ticker} earnings surprise {pct:+.1f}% (>{EARNINGS_SURPRISE_RED:.0f}%)"
 
     # NVDA reporting today — the single biggest MNQ mover. Treat the edge as
-    # broken outright, regardless of the strike count.
-    if "NVDA" in (sentiment.get("earnings_today") or []):
-        return "NVDA reports earnings today — the single biggest MNQ mover"
+    # broken outright, regardless of the strike count. `earnings_today` is the
+    # forward-calendar field from data.sentiment — NOT earnings_surprise_pct
+    # above, which is the 5-day lookback.
+    earnings_today = sentiment.get("earnings_today") or []
+    console.print(
+        f"[dim]auto-RED check — earnings_today={earnings_today}[/dim]"
+    )
+    if "NVDA" in earnings_today:
+        nvda = next(
+            (e for e in (sentiment.get("upcoming_earnings") or [])
+             if e.get("ticker") == "NVDA" and e.get("is_today")),
+            None,
+        )
+        when = (nvda or {}).get("report_time") or "TBD"
+        return f"NVDA earnings today ({when})"
 
     yield_bps = market.get("yield_bps_change") or 0.0
     if market.get("vix_term_structure") == "backwardation" and abs(yield_bps) > YIELD_BPS_STRIKE:
