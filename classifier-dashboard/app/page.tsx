@@ -336,9 +336,9 @@ function PanelGrid({ data }: { data: DailyVerdict }) {
       <VixPanel data={data} />
       <IvPanel data={data} />
       <GexPanel data={data} />
-      <OvernightPanel data={data} />
       <BiasPanel data={data} />
       <OpenBiasPanel data={data} />
+      <OvernightPanel data={data} />
     </div>
   );
 }
