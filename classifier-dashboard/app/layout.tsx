@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   title: "Vigil — MNQ Pre-Market Regime",
   description:
     "Forward-looking pre-market intelligence for MNQ futures. Regime classification and GREEN/YELLOW/RED verdict before the open.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 const navLink = {

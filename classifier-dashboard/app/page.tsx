@@ -1136,7 +1136,11 @@ function Headlines({ data }: { data: DailyVerdict }) {
 
 function EventRisk({ data }: { data: DailyVerdict }) {
   const events = data.event_names ?? [];
-  if (!data.high_impact_event_today && events.length === 0) return null;
+  const upcoming = data.upcoming_earnings ?? [];
+  const hasEvents = Boolean(data.high_impact_event_today) || events.length > 0;
+  // Stay hidden only when there is nothing at all to report.
+  if (!hasEvents && upcoming.length === 0) return null;
+
   return (
     <div
       style={{
@@ -1144,34 +1148,115 @@ function EventRisk({ data }: { data: DailyVerdict }) {
         borderColor: colors.yellow,
       }}
     >
-      <div style={{ ...panelLabelStyle, color: colors.yellow }}>
-        Event Risk Today
-      </div>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 8,
-          marginTop: 4,
-        }}
-      >
-        {events.map((e, i) => (
-          <span
-            key={i}
+      <div style={{ ...panelLabelStyle, color: colors.yellow }}>Event Risk</div>
+
+      {hasEvents && (
+        <>
+          <div
+            style={{ ...panelLabelStyle, fontSize: 10, marginBottom: 6 }}
+          >
+            Macro Events Today
+          </div>
+          <div
             style={{
-              ...numberStyle,
-              fontSize: 12,
-              padding: "4px 10px",
-              border: `1px solid ${colors.yellow}`,
-              color: colors.yellow,
-              textTransform: "uppercase",
-              letterSpacing: 1,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              marginBottom: 14,
             }}
           >
-            {e}
-          </span>
-        ))}
+            {events.map((e, i) => (
+              <span
+                key={i}
+                style={{
+                  ...numberStyle,
+                  fontSize: 12,
+                  padding: "4px 10px",
+                  border: `1px solid ${colors.yellow}`,
+                  color: colors.yellow,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                }}
+              >
+                {e}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div style={{ ...panelLabelStyle, fontSize: 10, marginBottom: 6 }}>
+        Upcoming Earnings · Next 3 Days
       </div>
+      {upcoming.length > 0 ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {upcoming.map((e, i) => {
+            // Tier 1 names move MNQ 1-3% alone — flag them hottest.
+            const tierColor = e.tier === 1 ? colors.red : colors.yellow;
+            return (
+              <span
+                key={i}
+                style={{
+                  ...numberStyle,
+                  fontSize: 12,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "4px 10px",
+                  border: `1px solid ${tierColor}`,
+                  color: tierColor,
+                }}
+                title={e.company ?? e.ticker}
+              >
+                <span style={{ fontWeight: 700, letterSpacing: 1 }}>
+                  {e.ticker}
+                </span>
+                <span style={{ color: colors.textMuted, fontSize: 11 }}>
+                  {e.report_time ?? "TBD"}
+                </span>
+                <span
+                  style={{
+                    fontSize: 9,
+                    padding: "1px 5px",
+                    background: tierColor,
+                    color: colors.bg,
+                    borderRadius: 2,
+                    letterSpacing: 0.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  T{e.tier}
+                </span>
+                {e.is_today && (
+                  <span style={{ fontSize: 9, letterSpacing: 1 }}>TODAY</span>
+                )}
+                {!e.is_today && e.is_tomorrow && (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      letterSpacing: 1,
+                      color: colors.textMuted,
+                    }}
+                  >
+                    TOMORROW
+                  </span>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <div
+          style={{
+            color: colors.textMuted,
+            fontFamily: mono,
+            fontSize: 12,
+            padding: "4px 0",
+          }}
+        >
+          No major earnings next 3 days
+        </div>
+      )}
     </div>
   );
 }

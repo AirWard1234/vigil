@@ -217,6 +217,32 @@ def _fmt_event_risk(has_event: bool | None, names: list[str] | None) -> str:
     return "No event risk"
 
 
+def _fmt_upcoming_earnings(row: dict) -> list[str]:
+    """Earnings-today / earnings-tomorrow lines for the morning alert.
+
+    Empty list when nothing reports today or tomorrow — the morning message
+    stays quiet rather than carrying a "no earnings" line every day.
+    """
+    upcoming = row.get("upcoming_earnings") or []
+    lines: list[str] = []
+
+    def _names(items: list[dict]) -> str:
+        return ", ".join(
+            f"{e.get('ticker', '?')} ({e.get('report_time', 'TBD')})"
+            for e in items
+        )
+
+    today = [e for e in upcoming if e.get("is_today")]
+    if today:
+        lines.append(f"⚠️ EARNINGS TODAY: {_names(today)}")
+
+    tomorrow = [e for e in upcoming if e.get("is_tomorrow")]
+    if tomorrow:
+        lines.append(f"📅 EARNINGS TOMORROW: {_names(tomorrow)}")
+
+    return lines
+
+
 def _approach_line(verdict: str, regime: str | None) -> str:
     return (
         _APPROACH.get((verdict, regime or ""))
@@ -273,10 +299,11 @@ def format_morning_alert(row: dict) -> str:
     dxy_line = _fmt_dxy(row.get("dxy_change"), row.get("dxy_label"))
     if dxy_line:
         lines.append(dxy_line)
-    lines.extend([
-        _fmt_event_risk(row.get("high_impact_event_today"), row.get("event_names")),
-        f"Approach: {_approach_line(verdict, regime)}",
-    ])
+    lines.append(
+        _fmt_event_risk(row.get("high_impact_event_today"), row.get("event_names"))
+    )
+    lines.extend(_fmt_upcoming_earnings(row))
+    lines.append(f"Approach: {_approach_line(verdict, regime)}")
     if bias_line:
         lines.append("_Directional lean only — not a trade signal_")
     if open_bias_lines:

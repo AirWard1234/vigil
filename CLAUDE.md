@@ -60,6 +60,7 @@ Strikes are accumulated across four categories:
 - Technical (yield, VIX, SMH vs SPY/QQQ, semi health, IV)
 - Sentiment (FinBERT semi + macro scores, guidance cuts)
 - Event risk (CPI, NFP, FOMC, GDP scheduled today)
+- Earnings risk (Tier 1 name reporting today, or Tier 1 BMO tomorrow)
 - Regime adjustment (HMM output modifies final strike count)
 
 Verdict:
@@ -68,6 +69,10 @@ Verdict:
 - 3+ strikes  = RED (stay out)
 
 Automatic RED overrides bypass strike count entirely.
+
+NVDA reporting earnings today (`earnings_today` contains "NVDA") triggers an
+automatic RED override — NVDA is the single biggest MNQ mover, so the edge is
+treated as broken regardless of the strike count.
 
 ## Key Rules for Claude Code
 - Never introduce backtesting logic — this system is forward-looking only

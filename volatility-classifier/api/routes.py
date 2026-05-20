@@ -179,6 +179,11 @@ def _flatten_for_db(result: dict, today: str) -> dict:
         "earnings_flag": bool(sentiment.get("earnings_data")),
         "guidance_cut_flag": guidance_any,
 
+        "upcoming_earnings": sentiment.get("upcoming_earnings") or [],
+        "earnings_today": sentiment.get("earnings_today") or [],
+        "earnings_tomorrow": sentiment.get("earnings_tomorrow") or [],
+        "earnings_today_tier1": bool(sentiment.get("earnings_today_tier1")),
+
         "expected_range_low": range_data.get("expected_range_low"),
         "expected_range_high": range_data.get("expected_range_high"),
         "one_sigma_low": range_data.get("one_sigma_low"),

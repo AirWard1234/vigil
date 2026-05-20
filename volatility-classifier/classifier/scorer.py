@@ -525,6 +525,39 @@ def _event_strikes(sentiment: dict) -> list[str]:
     return [f"major event(s) scheduled today: {names}"]
 
 
+def _earnings_strikes(sentiment: dict) -> list[str]:
+    """Forward earnings strikes — Tier 1 names reporting today or tomorrow BMO.
+
+    Reads the upcoming-earnings list from data.sentiment (next 3 trading days).
+    Each condition contributes at most one strike no matter how many names hit.
+    NVDA reporting today is handled separately as an automatic RED override.
+    """
+    upcoming = (sentiment or {}).get("upcoming_earnings") or []
+    strikes: list[str] = []
+
+    today_tier1 = [
+        e["ticker"] for e in upcoming
+        if e.get("tier") == 1 and e.get("is_today")
+    ]
+    if today_tier1:
+        strikes.append(
+            f"{'/'.join(today_tier1)} earnings today — elevated uncertainty"
+        )
+
+    tomorrow_bmo_tier1 = [
+        e["ticker"] for e in upcoming
+        if e.get("tier") == 1 and e.get("is_tomorrow")
+        and e.get("report_time") == "BMO"
+    ]
+    if tomorrow_bmo_tier1:
+        strikes.append(
+            f"{'/'.join(tomorrow_bmo_tier1)} earnings tomorrow before open "
+            f"— positioning risk today"
+        )
+
+    return strikes
+
+
 def _auto_red_overrides(
     market: dict, sentiment: dict, regime: dict, semi_health_score: int,
 ) -> str | None:
@@ -538,6 +571,11 @@ def _auto_red_overrides(
         pct = earnings_surprise.get(ticker)
         if pct is not None and abs(pct) > EARNINGS_SURPRISE_RED:
             return f"{ticker} earnings surprise {pct:+.1f}% (>{EARNINGS_SURPRISE_RED:.0f}%)"
+
+    # NVDA reporting today — the single biggest MNQ mover. Treat the edge as
+    # broken outright, regardless of the strike count.
+    if "NVDA" in (sentiment.get("earnings_today") or []):
+        return "NVDA reports earnings today — the single biggest MNQ mover"
 
     yield_bps = market.get("yield_bps_change") or 0.0
     if market.get("vix_term_structure") == "backwardation" and abs(yield_bps) > YIELD_BPS_STRIKE:
@@ -725,7 +763,8 @@ def score(
     technical = _technical_strikes(market, options, semi_health_score)
     sentiment_s = _sentiment_strikes(sentiment)
     events = _event_strikes(sentiment)
-    counted_strikes = technical + sentiment_s + events
+    earnings_s = _earnings_strikes(sentiment)
+    counted_strikes = technical + sentiment_s + events + earnings_s
 
     # Regime adjustment is applied after counting (floor 0).
     regime_label = regime.get("regime_label", "Unknown")

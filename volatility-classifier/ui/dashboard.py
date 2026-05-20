@@ -358,6 +358,31 @@ def _events_panel(sentiment: dict) -> Panel:
         earn_table.add_row(Text("none in last 5d", style=DIM), "")
     blocks.append(earn_table)
 
+    blocks.append(Text(""))
+    blocks.append(Text("upcoming earnings (next 3d)", style=DIM))
+    upcoming = sentiment.get("upcoming_earnings") or []
+    up_table = _kv_grid()
+    if upcoming:
+        for e in upcoming:
+            tier = e.get("tier")
+            dot_color = RED if tier == 1 else YELLOW
+            when = e.get("report_time") or "TBD"
+            if e.get("is_today"):
+                when += "  TODAY"
+            elif e.get("is_tomorrow"):
+                when += "  TMRW"
+            row = Text()
+            row.append("● ", style=dot_color)
+            row.append(f"{e.get('ticker', '?')}  ", style="white")
+            row.append(f"T{tier}", style=dot_color)
+            up_table.add_row(
+                row,
+                Text(when, style=dot_color if e.get("is_today") else "white"),
+            )
+    else:
+        up_table.add_row(Text("no major earnings next 3 days", style=GREEN), "")
+    blocks.append(up_table)
+
     return _panel(Group(*blocks), "Event Risk")
 
 

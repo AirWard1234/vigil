@@ -20,6 +20,17 @@ export type TopHeadlines = {
   macro?: Headline[];
 };
 
+export type UpcomingEarning = {
+  ticker: string;
+  company?: string;
+  report_date?: string;
+  report_time?: string;
+  eps_estimate?: number | null;
+  tier: number;
+  is_today?: boolean;
+  is_tomorrow?: boolean;
+};
+
 export type DailyVerdict = {
   id?: string;
   date: string;
@@ -60,6 +71,10 @@ export type DailyVerdict = {
   event_names: string[] | null;
   earnings_flag: boolean | null;
   guidance_cut_flag: boolean | null;
+  upcoming_earnings: UpcomingEarning[] | null;
+  earnings_today: string[] | null;
+  earnings_tomorrow: string[] | null;
+  earnings_today_tier1: boolean | null;
 
   expected_range_low: number | null;
   expected_range_high: number | null;

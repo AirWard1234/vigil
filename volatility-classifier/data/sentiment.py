@@ -26,6 +26,37 @@ MACRO_TERMS = [
 EVENT_TERMS = ["CPI", "NFP", "FOMC", "GDP"]
 EARNINGS_LOOKBACK_DAYS = 5
 
+# Forward earnings check — how many trading days ahead (today inclusive) to
+# scan for upcoming reports. Distinct from the 5-day lookback above, which is
+# only for realized surprises.
+EARNINGS_FORWARD_DAYS = 3
+
+# High-impact Nasdaq names whose earnings move MNQ. Tier 1 can swing MNQ
+# 1-3% on its own; Tier 2 moves it 0.5-1%.
+TIER1_EARNINGS_TICKERS = [
+    "NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "GOOG", "TSLA",
+    "AMD", "AVGO", "TSM", "ASML",
+]
+TIER2_EARNINGS_TICKERS = [
+    "INTC", "MU", "QCOM", "ARM", "MRVL", "SMCI", "AMAT", "LRCX", "KLAC",
+    "PANW", "CRM", "ADBE", "NOW", "SNOW",
+]
+
+# Finnhub's earnings calendar returns only the symbol — map to display names
+# locally so the dashboards/alerts don't need an extra profile call per ticker.
+EARNINGS_COMPANY_NAMES = {
+    "NVDA": "NVIDIA", "MSFT": "Microsoft", "AAPL": "Apple", "AMZN": "Amazon",
+    "META": "Meta Platforms", "GOOGL": "Alphabet (A)", "GOOG": "Alphabet (C)",
+    "TSLA": "Tesla", "AMD": "Advanced Micro Devices", "AVGO": "Broadcom",
+    "TSM": "Taiwan Semiconductor", "ASML": "ASML Holding",
+    "INTC": "Intel", "MU": "Micron Technology", "QCOM": "Qualcomm",
+    "ARM": "Arm Holdings", "MRVL": "Marvell Technology",
+    "SMCI": "Super Micro Computer", "AMAT": "Applied Materials",
+    "LRCX": "Lam Research", "KLAC": "KLA Corporation",
+    "PANW": "Palo Alto Networks", "CRM": "Salesforce", "ADBE": "Adobe",
+    "NOW": "ServiceNow", "SNOW": "Snowflake",
+}
+
 OVERNIGHT_START = time(23, 0)   # 11 PM ET previous day
 OVERNIGHT_END = time(8, 30)     # 8:30 AM ET today
 
@@ -180,6 +211,88 @@ def _earnings(today_et: date) -> list[dict]:
     return out
 
 
+def _next_trading_days(start: date, count: int) -> list[date]:
+    """The next `count` weekdays starting at `start` (inclusive if a weekday).
+
+    Holidays aren't modeled — Finnhub simply returns no earnings on them, so a
+    holiday inside the window just yields an empty slot rather than a wrong one.
+    """
+    days: list[date] = []
+    d = start
+    while len(days) < count:
+        if d.weekday() < 5:   # Mon-Fri
+            days.append(d)
+        d += timedelta(days=1)
+    return days
+
+
+def _hour_label(hour: str | None) -> str:
+    """Map Finnhub's `hour` field to a display tag (BMO / AMC / DMH / TBD)."""
+    return {"bmo": "BMO", "amc": "AMC", "dmh": "DMH"}.get(
+        (hour or "").strip().lower(), "TBD"
+    )
+
+
+def _upcoming_earnings(today_et: date) -> dict:
+    """Forward earnings check — Tier 1/2 names reporting in the next 3 trading days.
+
+    Separate from _earnings(), which looks 5 days BACK for realized surprises.
+    This looks AHEAD so the scorer can flag positioning risk before a big
+    report lands. Returns the snapshot fields described in fetch_overnight_
+    sentiment(); the caller swallows exceptions and keeps the empty defaults.
+    """
+    trading_days = _next_trading_days(today_et, EARNINGS_FORWARD_DAYS)
+    today_d = today_et if today_et in trading_days else None
+    future_days = [d for d in trading_days if d > today_et]
+    tomorrow_d = future_days[0] if future_days else None
+
+    data = _get("/calendar/earnings", {
+        "from": trading_days[0].strftime("%Y-%m-%d"),
+        "to": trading_days[-1].strftime("%Y-%m-%d"),
+    })
+    rows = (data or {}).get("earningsCalendar") or [] if isinstance(data, dict) else []
+
+    upcoming: list[dict] = []
+    for r in rows:
+        symbol = r.get("symbol", "")
+        if symbol in TIER1_EARNINGS_TICKERS:
+            tier = 1
+        elif symbol in TIER2_EARNINGS_TICKERS:
+            tier = 2
+        else:
+            continue
+        try:
+            report_date = date.fromisoformat(r.get("date") or "")
+        except ValueError:
+            continue
+        if report_date not in trading_days:
+            continue
+        upcoming.append({
+            "ticker": symbol,
+            "company": EARNINGS_COMPANY_NAMES.get(symbol, symbol),
+            "report_date": report_date.isoformat(),
+            "report_time": _hour_label(r.get("hour")),
+            "eps_estimate": r.get("epsEstimate"),
+            "tier": tier,
+            "is_today": report_date == today_d,
+            "is_tomorrow": report_date == tomorrow_d,
+        })
+
+    upcoming.sort(key=lambda e: (e["report_date"], e["tier"], e["ticker"]))
+
+    return {
+        "upcoming_earnings": upcoming,
+        "earnings_today": [e["ticker"] for e in upcoming if e["is_today"]],
+        "earnings_tomorrow": [e["ticker"] for e in upcoming if e["is_tomorrow"]],
+        "earnings_today_tier1": any(
+            e["tier"] == 1 for e in upcoming if e["is_today"]
+        ),
+        "earnings_tomorrow_tier1": any(
+            e["tier"] == 1 for e in upcoming if e["is_tomorrow"]
+        ),
+    }
+
+
 def _economic_events(today_et: date) -> list[dict]:
     try:
         data = _get("/calendar/economic", {
@@ -224,6 +337,11 @@ def fetch_overnight_sentiment() -> dict:
         "top_3_macro_headlines": [],
         "guidance_cut_flag": {},
         "earnings_surprise_pct": {},
+        "upcoming_earnings": [],
+        "earnings_today": [],
+        "earnings_tomorrow": [],
+        "earnings_today_tier1": False,
+        "earnings_tomorrow_tier1": False,
         "source": "FINNHUB",
     }
 
@@ -254,6 +372,11 @@ def fetch_overnight_sentiment() -> dict:
         result["earnings_data"] = _earnings(today_et)
     except Exception as e:
         console.print(f"[red]Earnings fetch failed:[/red] {e}")
+
+    try:
+        result.update(_upcoming_earnings(today_et))
+    except Exception as e:
+        console.print(f"[red]Upcoming earnings fetch failed:[/red] {e}")
 
     try:
         result["todays_events"] = _economic_events(today_et)
@@ -291,6 +414,20 @@ def _print_confirmation(r: dict) -> None:
     console.print(f"  Semi headlines:    {semi_n}  [dim](score: {r['semi_sentiment_score']:+.3f})[/dim]")
     console.print(f"  Macro headlines:   {macro_n}  [dim](score: {r['macro_sentiment_score']:+.3f})[/dim]")
     console.print(f"  Earnings (5d):     {len(r['earnings_data'])}  [dim](semis: {semi_earnings})[/dim]")
+
+    upcoming = r.get("upcoming_earnings") or []
+    if upcoming:
+        today_n = len(r.get("earnings_today") or [])
+        tom_n = len(r.get("earnings_tomorrow") or [])
+        names = ", ".join(f"{e['ticker']}({e['report_time']})" for e in upcoming)
+        color = "red" if r.get("earnings_today_tier1") else "white"
+        console.print(
+            f"  Upcoming earnings: [{color}]{names}[/{color}]  "
+            f"[dim](today: {today_n}, tomorrow: {tom_n})[/dim]"
+        )
+    else:
+        console.print("  Upcoming earnings: [green]none next 3 days[/green]")
+
     if r["todays_events"]:
         names = ", ".join(e["matched_term"] for e in r["todays_events"])
         console.print(f"  Today's events:    [red]{names}[/red]")
