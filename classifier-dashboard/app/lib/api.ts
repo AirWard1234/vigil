@@ -32,12 +32,16 @@ export type DailyVerdict = {
 
   yield_bps_change: number | null;
   yield_accelerating: boolean | null;
+  dxy_change: number | null;
+  dxy_label: string | null;
   smh_vs_spy: number | null;
   smh_vs_qqq: number | null;
   semi_health_score: number | null;
   semi_health_label: string | null;
   vix_term_structure: string | null;
   realized_vs_implied: number | null;
+  vix_spread: number | null;
+  vix_spread_label: string | null;
 
   smh_iv: number | null;
   nvda_iv: number | null;

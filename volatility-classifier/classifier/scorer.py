@@ -52,11 +52,14 @@ BIAS_MACRO_SENTIMENT_W = 20.0
 BIAS_SMH_VS_SPY_W = 15.0
 BIAS_SMH_VS_QQQ_W = 10.0
 BIAS_YIELD_W = 10.0
+BIAS_DXY_W = 8.0           # ±8 — dollar strength is a tech/MNQ headwind
+BIAS_VIX_SPREAD_W = 5.0    # ±5 soft signal — near-term fear vs calm
 
 # Inputs saturate at these magnitudes (linear ramp until then).
 BIAS_SMH_SPY_SAT = 1.0   # ±1.0% — caps SMH-vs-SPY contribution
 BIAS_SMH_QQQ_SAT = 1.0
 BIAS_YIELD_BPS_SAT = 5.0
+BIAS_DXY_SAT = 0.3       # ±0.3% — caps the DXY contribution at ±8
 
 
 def _ramp(value: float, saturation: float) -> float:
@@ -162,6 +165,35 @@ def compute_bias(market: dict, options: dict, sentiment: dict, regime: dict) -> 
         contributions.append(
             ("yield_bps_change", c, f"yields {verb} {yield_bps:+.1f}bps")
         )
+
+    dxy_change = market.get("dxy_change")
+    if dxy_change is not None:
+        # A stronger dollar is a headwind for tech/MNQ — contribution inverted.
+        # Ramp saturates at ±0.3%, so |contribution| caps at BIAS_DXY_W (8).
+        c = -_ramp(float(dxy_change), BIAS_DXY_SAT) * BIAS_DXY_W
+        running += c
+        verb = "strengthening" if dxy_change > 0 else "weakening"
+        contributions.append(
+            ("dxy_change", c, f"dollar {verb} ({dxy_change:+.2f}%)")
+        )
+
+    # VIX9D − VIX spread — soft signal: near-term fear leans bearish.
+    vix_spread = market.get("vix_spread")
+    if vix_spread is not None:
+        if vix_spread > 1.0:
+            c = -BIAS_VIX_SPREAD_W
+        elif vix_spread < -1.0:
+            c = BIAS_VIX_SPREAD_W
+        else:
+            c = 0.0
+        if c != 0.0:
+            running += c
+            descriptor = (
+                "elevated near-term fear" if c < 0 else "near-term calm"
+            )
+            contributions.append(
+                ("vix_spread", c, f"{descriptor} (VIX9D−VIX {vix_spread:+.1f})")
+            )
 
     # GEX adjustment — amplifying gamma stretches directional moves.
     gex_label = (options.get("gex_label") or "").lower()

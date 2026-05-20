@@ -156,6 +156,10 @@ def _flatten_for_db(result: dict, today: str) -> dict:
         "semi_health_label": verdict.get("semi_health_label"),
         "vix_term_structure": market.get("vix_term_structure"),
         "realized_vs_implied": market.get("realized_vol_vs_vix"),
+        "vix_spread": market.get("vix_spread"),
+        "vix_spread_label": market.get("vix_spread_label"),
+        "dxy_change": market.get("dxy_change"),
+        "dxy_label": market.get("dxy_label"),
 
         "smh_iv": options.get("smh_iv"),
         "nvda_iv": options.get("nvda_iv"),

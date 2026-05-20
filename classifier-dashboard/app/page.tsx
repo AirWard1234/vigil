@@ -652,6 +652,13 @@ function YieldPanel({ data }: { data: DailyVerdict }) {
         : data.yield_bps_change < 0
           ? colors.green
           : colors.text;
+  const dxyLabel = data.dxy_label ?? "Unavailable";
+  const dxyColor =
+    dxyLabel === "Dollar Strength — headwind"
+      ? colors.red
+      : dxyLabel === "Dollar Weakness — tailwind"
+        ? colors.green
+        : colors.text;
   return (
     <div style={panelStyle}>
       <div style={panelLabelStyle}>Yield</div>
@@ -664,6 +671,15 @@ function YieldPanel({ data }: { data: DailyVerdict }) {
         label="ROC"
         value={data.yield_accelerating ? "Accelerating" : "Stable"}
         color={data.yield_accelerating ? colors.yellow : colors.text}
+      />
+      <Row
+        label="DXY"
+        value={
+          data.dxy_change != null
+            ? `${fmtSigned(data.dxy_change, 1, "%")}  ${dxyLabel}`
+            : "Unavailable"
+        }
+        color={data.dxy_change != null ? dxyColor : colors.textMuted}
       />
     </div>
   );
@@ -705,10 +721,26 @@ function VixPanel({ data }: { data: DailyVerdict }) {
       : vts.toLowerCase().includes("contango")
         ? colors.green
         : colors.text;
+  const spreadLabel = data.vix_spread_label ?? "Neutral";
+  const spreadColor =
+    spreadLabel === "Elevated Near-Term Fear"
+      ? colors.red
+      : spreadLabel === "Near-Term Calm"
+        ? colors.green
+        : colors.text;
   return (
     <div style={panelStyle}>
       <div style={panelLabelStyle}>VIX Complex</div>
       <Row label="Term Structure" value={vts} color={vtsColor} />
+      <Row
+        label="VIX Spread"
+        value={
+          data.vix_spread != null
+            ? `${fmtSigned(data.vix_spread, 1)}  ${spreadLabel}`
+            : "—"
+        }
+        color={data.vix_spread != null ? spreadColor : colors.text}
+      />
       <Row
         label="RV / IV"
         value={fmtNum(data.realized_vs_implied, 2, "×")}

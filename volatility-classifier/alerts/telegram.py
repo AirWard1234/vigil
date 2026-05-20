@@ -186,6 +186,14 @@ def _fmt_yield(bps: float | None, accelerating: bool | None) -> str:
     return f"Yield: {bps:+.0f}bps {state}"
 
 
+def _fmt_dxy(change: float | None, label: str | None) -> str | None:
+    """DXY premarket line for the morning alert. None when DXY is unavailable."""
+    if change is None:
+        return None
+    desc = (label or "").replace(" — ", " ")
+    return f"DXY: {change:+.1f}% — {desc}" if desc else f"DXY: {change:+.1f}%"
+
+
 def _fmt_range(low: float | None, high: float | None) -> str:
     if low is None or high is None:
         return "Range: n/a"
@@ -261,6 +269,11 @@ def format_morning_alert(row: dict) -> str:
         _fmt_gex(row.get("gex_label")),
         _fmt_semis(row.get("semi_health_label"), row.get("semi_health_score")),
         _fmt_yield(row.get("yield_bps_change"), row.get("yield_accelerating")),
+    ])
+    dxy_line = _fmt_dxy(row.get("dxy_change"), row.get("dxy_label"))
+    if dxy_line:
+        lines.append(dxy_line)
+    lines.extend([
         _fmt_event_risk(row.get("high_impact_event_today"), row.get("event_names")),
         f"Approach: {_approach_line(verdict, regime)}",
     ])

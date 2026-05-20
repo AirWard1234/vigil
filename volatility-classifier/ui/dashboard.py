@@ -144,6 +144,20 @@ def _yield_panel(market: dict) -> Panel:
                                        style=RED if move_strike else "white"))
     roc_color = RED if accel_strike else (YELLOW if roc == "accelerating" else DIM)
     t.add_row("rate of change", Text(roc, style=roc_color))
+
+    dxy = market.get("dxy_change")
+    dxy_label = market.get("dxy_label") or "Unavailable"
+    dxy_color = {
+        "Dollar Strength — headwind": RED,
+        "Dollar Weakness — tailwind": GREEN,
+        "Dollar Neutral": "white",
+    }.get(dxy_label, DIM)
+    dxy_value = (
+        "Unavailable" if dxy is None
+        else f"{_num(dxy, '{:+.1f}%')}  {dxy_label}"
+    )
+    t.add_row("DXY change", Text(dxy_value, style=dxy_color))
+
     t.add_row(
         "strike flag",
         Text("STRIKE", style=f"bold {RED}") if flagged else Text("clear", style=GREEN),
@@ -195,6 +209,19 @@ def _vix_panel(market: dict) -> Panel:
     t.add_row("VIX", Text(_num(lvl("^VIX"), "{:.2f}"), style="white"))
     t.add_row("VIX3M", Text(_num(lvl("^VIX3M"), "{:.2f}"), style="white"))
     t.add_row("term structure", Text(term, style=f"bold {term_color}"))
+
+    spread = market.get("vix_spread")
+    spread_label = market.get("vix_spread_label") or "Neutral"
+    spread_color = {
+        "Elevated Near-Term Fear": RED,
+        "Near-Term Calm": GREEN,
+        "Neutral": "white",
+    }.get(spread_label, "white")
+    t.add_row(
+        "VIX9D/VIX spread",
+        Text(f"{_num(spread, '{:+.1f}')}  {spread_label}", style=spread_color),
+    )
+
     t.add_row("realized / implied", Text(_num(rv_iv, "{:.2f}×"), style="white"))
     return _panel(t, "VIX Complex", border=term_color if term != "unknown" else DIM)
 

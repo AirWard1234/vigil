@@ -67,6 +67,41 @@ def _term_structure(vix9d: float, vix: float, vix3m: float) -> str:
     return "mixed"
 
 
+def _vix_spread_label(spread: float) -> str:
+    """Near-term fear gauge from the VIX9D − VIX spread."""
+    if spread > 1.0:
+        return "Elevated Near-Term Fear"
+    if spread < -1.0:
+        return "Near-Term Calm"
+    return "Neutral"
+
+
+def _dxy_premarket() -> tuple[float | None, str]:
+    """DXY (DX-Y.NYB) premarket move as a percent, plus a regime label.
+
+    Returns (None, "Unavailable") if the fetch fails or the data is missing —
+    yfinance occasionally returns an empty frame for the ICE dollar index.
+    """
+    try:
+        snap = _ticker_snapshot("DX-Y.NYB")
+        current = snap["current_price"]
+        prior = snap["previous_close"]
+        if not prior or np.isnan(prior) or np.isnan(current):
+            return None, "Unavailable"
+        change = (current - prior) / prior * 100.0
+    except Exception as e:
+        console.print(f"[red]DXY fetch failed:[/red] {e}")
+        return None, "Unavailable"
+
+    if change > 0.3:
+        label = "Dollar Strength — headwind"
+    elif change < -0.3:
+        label = "Dollar Weakness — tailwind"
+    else:
+        label = "Dollar Neutral"
+    return change, label
+
+
 def fetch_market_snapshot() -> dict:
     snapshots = {t: _ticker_snapshot(t) for t in MACRO + SEMIS}
 
@@ -92,6 +127,13 @@ def fetch_market_snapshot() -> dict:
         snapshots["^VIX3M"]["current_price"],
     )
 
+    vix9d_level = snapshots["^VIX9D"]["current_price"]
+    vix_level_for_spread = snapshots["^VIX"]["current_price"]
+    vix_spread = vix9d_level - vix_level_for_spread
+    vix_spread_label = _vix_spread_label(vix_spread)
+
+    dxy_change, dxy_label = _dxy_premarket()
+
     smh_rv = _realized_vol(snapshots["SMH"]["closes_5d"])
     vix_level = snapshots["^VIX"]["current_price"]
     rv_vix_ratio = smh_rv / vix_level if vix_level else float("nan")
@@ -105,6 +147,10 @@ def fetch_market_snapshot() -> dict:
         "semi_vs_spy": semi_vs_spy,
         "underperformers": underperformers,
         "vix_term_structure": term,
+        "vix_spread": vix_spread,
+        "vix_spread_label": vix_spread_label,
+        "dxy_change": dxy_change,
+        "dxy_label": dxy_label,
         "smh_realized_vol_5d": smh_rv,
         "realized_vol_vs_vix": rv_vix_ratio,
     }
@@ -122,6 +168,15 @@ def _print_confirmation(r: dict) -> None:
         flag = " [red]UNDERPERFORM[/red]" if sym in r["underperformers"] else ""
         console.print(f"  {sym} vs SPY: {diff:+.3f}%{flag}")
     console.print(f"  VIX term structure: {r['vix_term_structure']}")
+    console.print(
+        f"  VIX9D/VIX spread: {r['vix_spread']:+.2f} ({r['vix_spread_label']})"
+    )
+    if r["dxy_change"] is None:
+        console.print("  DXY premarket: Unavailable")
+    else:
+        console.print(
+            f"  DXY premarket: {r['dxy_change']:+.2f}% ({r['dxy_label']})"
+        )
     console.print(f"  SMH 5d realized vol: {r['smh_realized_vol_5d']:.2f}%")
     console.print(f"  RV / VIX ratio: {r['realized_vol_vs_vix']:.3f}")
 
