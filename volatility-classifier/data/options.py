@@ -14,6 +14,8 @@ console = Console()
 
 ELEVATED_THRESHOLD = 1.20  # current IV > 120% of 20d hist vol → elevated
 MIN_DAYS_TO_EXPIRY = 20
+MIN_VALID_IV = 0.05        # yfinance ATM IV below 5% is bad data → reject
+MAX_VALID_IV = 2.00        # ATM IV above 200% is bad data → reject
 
 SPY_GEX_URL = "https://www.insiderfinance.io/gamma-exposure/SPY"
 SCRAPE_DELAY_SECONDS = 3
@@ -70,26 +72,41 @@ def _historical_vol_20d(symbol: str) -> float | None:
         return None
 
 
-def _atm_iv(symbol: str) -> tuple[float | None, float | None]:
-    """Return (current_30d_atm_iv, 20d_hist_vol) as decimals (0.30 = 30%)."""
+def _vix_fallback_iv() -> float | None:
+    """Crude ESTIMATED IV from the VIX index (VIX ÷ 100) when chain IV is bad."""
+    vix = _spot(yf.Ticker("^VIX"))
+    if vix is None or vix <= 0:
+        return None
+    return vix / 100.0
+
+
+def _atm_iv(symbol: str) -> tuple[float | None, float | None, bool]:
+    """Return (current_30d_atm_iv, 20d_hist_vol, estimated) as decimals (0.30 = 30%).
+
+    yfinance occasionally serves a near-zero or absurdly large
+    `impliedVolatility` on the options chain (SMH/NVDA have been seen at
+    0.03% and 0.20%). Any calculated IV outside [MIN_VALID_IV, MAX_VALID_IV]
+    is rejected and replaced with a VIX/100 estimate; `estimated` is then True
+    so the caller can label the snapshot ESTIMATED.
+    """
     ticker = yf.Ticker(symbol)
     expiry = _nearest_monthly_expiry(ticker)
     if not expiry:
-        return None, None
+        return None, None, False
 
     spot = _spot(ticker)
     if spot is None:
-        return None, None
+        return None, None, False
 
     try:
         chain = ticker.option_chain(expiry)
     except Exception:
-        return None, None
+        return None, None, False
 
     calls = chain.calls
     puts = chain.puts
     if calls is None or puts is None or calls.empty or puts.empty:
-        return None, None
+        return None, None, False
 
     atm_call = calls.iloc[(calls["strike"] - spot).abs().argsort().iloc[0]]
     atm_put = puts.iloc[(puts["strike"] - spot).abs().argsort().iloc[0]]
@@ -97,8 +114,10 @@ def _atm_iv(symbol: str) -> tuple[float | None, float | None]:
     call_iv = float(atm_call.get("impliedVolatility") or 0) or None
     put_iv = float(atm_put.get("impliedVolatility") or 0) or None
 
+    hist_vol = _historical_vol_20d(symbol)
+
     if call_iv is None and put_iv is None:
-        return None, _historical_vol_20d(symbol)
+        return None, hist_vol, False
     if call_iv is None:
         current_iv = put_iv
     elif put_iv is None:
@@ -106,7 +125,22 @@ def _atm_iv(symbol: str) -> tuple[float | None, float | None]:
     else:
         current_iv = (call_iv + put_iv) / 2.0
 
-    return current_iv, _historical_vol_20d(symbol)
+    # Reject implausible IV — yfinance bad data — and fall back to VIX/100.
+    if current_iv < MIN_VALID_IV or current_iv > MAX_VALID_IV:
+        reason = (
+            f"below {MIN_VALID_IV:.0%} floor" if current_iv < MIN_VALID_IV
+            else f"above {MAX_VALID_IV:.0%} ceiling"
+        )
+        fallback = _vix_fallback_iv()
+        console.print(
+            f"[yellow]⚠ {symbol} ATM IV rejected:[/yellow] raw value "
+            f"{current_iv:.6f} ({current_iv * 100:.2f}%) is {reason} — "
+            f"likely bad yfinance data. Falling back to "
+            f"{_fmt_pct(fallback)} (VIX/100, ESTIMATED)."
+        )
+        return fallback, hist_vol, True
+
+    return current_iv, hist_vol, False
 
 
 def fetch_options_snapshot() -> dict:
@@ -119,11 +153,13 @@ def fetch_options_snapshot() -> dict:
     }
 
     try:
-        smh_iv, smh_avg = _atm_iv("SMH")
-        nvda_iv, nvda_avg = _atm_iv("NVDA")
+        smh_iv, smh_avg, smh_est = _atm_iv("SMH")
+        nvda_iv, nvda_avg, nvda_est = _atm_iv("NVDA")
 
         result["smh_iv"] = smh_iv
         result["nvda_iv"] = nvda_iv
+        if smh_est or nvda_est:
+            result["source"] = "ESTIMATED"
         if smh_iv is not None and smh_avg:
             result["smh_iv_elevated"] = smh_iv > smh_avg * ELEVATED_THRESHOLD
         if nvda_iv is not None and nvda_avg:
