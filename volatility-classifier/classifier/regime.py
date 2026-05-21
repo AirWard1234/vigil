@@ -187,6 +187,25 @@ def _label_states(model: hmm.GaussianHMM) -> dict[int, str]:
     }
 
 
+def _stationary_distribution(transmat: np.ndarray, max_iter: int = 1000) -> np.ndarray:
+    """Long-run state occupancy of the fitted Markov chain.
+
+    This is the correct prior for classifying an isolated pre-market day, which
+    carries no temporal context — unlike the fitted ``startprob_``, which a
+    single-sequence Baum-Welch fit collapses onto whichever state the very
+    first training day happened to occupy. Computed by power iteration so the
+    result is always a valid probability vector.
+    """
+    n = transmat.shape[0]
+    dist = np.full(n, 1.0 / n)
+    for _ in range(max_iter):
+        nxt = dist @ transmat
+        if np.allclose(nxt, dist, atol=1e-12):
+            break
+        dist = nxt
+    return dist / dist.sum()
+
+
 # --------------------------------------------------------------------------
 # training + weekly retrain
 # --------------------------------------------------------------------------
@@ -211,6 +230,13 @@ def train_regime_model() -> RegimeModel:
         random_state=RANDOM_SEED,
     )
     model.fit(X_std)
+
+    # Fitting on one long sequence collapses startprob_ to a one-hot vector
+    # (the first training day's state). predict_proba on a single isolated day
+    # would then return 100% for that one state regardless of the features,
+    # because every other state is multiplied by a zero prior. Replace it with
+    # the chain's stationary distribution — the right prior for a lone day.
+    model.startprob_ = _stationary_distribution(model.transmat_)
 
     bundle = RegimeModel(
         hmm=model,
